@@ -16,7 +16,9 @@ Ran on main-mac with macOS 27.2.1, Xcode 27.2, and Slack 4.53.292.
 | 5. Concurrency | Two overlapping `current` commands both exited `0` in turn. A third with `--timeout 0.2` exited `14` with `busy`. The follow-up `doctor` enabled the tree again. |
 | 6. Interrupt during settle | Sent `SIGINT` after the recovery marker appeared. `doctor` exited `130`, and zero recovery markers remained. The next `doctor` enabled the tree again and passed all eight checks. |
 | 7. Locked screen | Skipped. Locking the live Mac was outside the authorized checks. |
-| 8. Channel deep link and focus | Skipped. The disposable team and conversation were unavailable. |
-| 9. DM link and sidebar press | Skipped. The disposable DM and user were unavailable. |
-| 10. Nonexistent conversation | Skipped. This still requires opening a link against a disposable workspace. |
+| 8. Channel deep link and focus | Blocked. The designated channel could not be identified in the rendered sidebar or current view. A workspace-qualified channel link would supply the destination. |
+| 9. DM link and sidebar press | One sidebar row in the visible workspace carried Slack's signed-in self-DM marker. The first sidebar attempt hit `slack_in_use` (exit `14`). After Slack was idle, the attempt returned `destination_mismatch` (exit `13`). A subsequent read showed the self-DM was still outside the current view. The `--user` route needs the signed-in user's Slack profile link. |
+| 10. Nonexistent conversation | Skipped. Live navigation authorization covers the two designated conversations. |
 | 11. Minimized and hidden Slack | Skipped. Changing live Slack visibility was outside the authorized checks. |
+
+After the sidebar attempt, `doctor` enabled the tree again and returned `ui_drift` (exit `12`). The actual view had 13 `messageList` matches, 12 of them inside rendered message items.
