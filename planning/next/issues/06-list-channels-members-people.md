@@ -1,5 +1,7 @@
 <!-- title: List channels, conversation members and the people directory -->
 
+> Plan labels used in this text. Issues 1 to 3 are the v0.1 issues: foundation with `doctor`, `current` and `open`; `read`; `draft` and `send`. Issue 4 is "Thread read and reply, reactions, and emoji in messages". Issue 5 is "v1.0 foundation: overlays, bounded paging, message history, account and destination checks, dry run". Issue 6 is "List channels, conversation members and the people directory". Issue 7 is "Native Slack search: messages, files and other result types, with filters and navigation to a result". Issue 8 is "Upload a file to a verified channel, DM or thread". Issue 9 is "Installable v1.0 release and the full validation matrix on main-mac". GitHub numbers may differ from these labels.
+
 Add three read-only listing commands: `channels`, `members` and `people`. Each returns ids the other commands accept, and each reports honestly whether the list is complete.
 
 Depends on issues 1, 2, 3 and 5. Use `UINode`, `Locators`, `SlackWindow`, `Navigator`, `Overlays`, `VirtualListPager`, `Account`, `RemoteError` and the output envelope as they are. The hard boundaries from issue 1 apply: Accessibility reads and semantic actions, documented links, no Slack API, no synthetic input, no coordinate-based clicks. These commands never write to Slack.

@@ -1,5 +1,7 @@
 <!-- title: Native Slack search: messages, files and other result types, with filters and navigation to a result -->
 
+> Plan labels used in this text. Issues 1 to 3 are the v0.1 issues: foundation with `doctor`, `current` and `open`; `read`; `draft` and `send`. Issue 4 is "Thread read and reply, reactions, and emoji in messages". Issue 5 is "v1.0 foundation: overlays, bounded paging, message history, account and destination checks, dry run". Issue 6 is "List channels, conversation members and the people directory". Issue 7 is "Native Slack search: messages, files and other result types, with filters and navigation to a result". Issue 8 is "Upload a file to a verified channel, DM or thread". Issue 9 is "Installable v1.0 release and the full validation matrix on main-mac". GitHub numbers may differ from these labels.
+
 Add `slack-remote search`, which runs a query through the Slack client's own search and returns what the client shows: messages, files, and each other result type the client exposes. Results can be filtered to a conversation or sender, paged within bounds, and one message result can be opened in its conversation.
 
 Depends on issues 1, 2, 3 and 5. Use `UINode`, `Locators`, `SlackWindow`, `Navigator`, `MessageReader`, `Overlays`, `VirtualListPager`, `Account`, `RemoteError` and the output envelope as they are. The hard boundaries from issue 1 apply: Accessibility reads, attribute writes and semantic actions; no Slack API or endpoints; no synthetic keyboard or mouse events; no coordinate-based clicks.

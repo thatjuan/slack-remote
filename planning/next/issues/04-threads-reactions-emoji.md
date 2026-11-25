@@ -1,6 +1,8 @@
 <!-- title: Thread read and reply, reactions, and emoji in messages -->
 <!-- replaces the body of the issue filed as "Optional: thread replies and reactions, where they can be targeted exactly" -->
 
+> Plan labels used in this text. Issues 1 to 3 are the v0.1 issues: foundation with `doctor`, `current` and `open`; `read`; `draft` and `send`. Issue 4 is "Thread read and reply, reactions, and emoji in messages". Issue 5 is "v1.0 foundation: overlays, bounded paging, message history, account and destination checks, dry run". Issue 6 is "List channels, conversation members and the people directory". Issue 7 is "Native Slack search: messages, files and other result types, with filters and navigation to a result". Issue 8 is "Upload a file to a verified channel, DM or thread". Issue 9 is "Installable v1.0 release and the full validation matrix on main-mac". GitHub numbers may differ from these labels.
+
 This issue was filed as optional because no route to a thread or a reaction had been observed. A second probe found one, so it is now required work in the v1.0 milestone. It adds `read --thread`, `reply`, `react`, and `:short_name:` emoji in message text.
 
 Depends on issues 1, 2, 3 and 5. Use their types as they are: `UINode`, `Locators`, `SlackWindow.verify`, `Navigator`, `MessageReader`, `MessageText`, `Composer`, `Sender`, `Overlays`, `VirtualListPager`, `Account`, `RemoteError`. The hard boundaries from issue 1 apply: Accessibility reads, attribute writes and semantic actions only; no synthetic keyboard or mouse events; no coordinate-based clicks; no Slack API.
