@@ -4,26 +4,50 @@
 
 ## Requirements
 
-- macOS 14 or later on Apple silicon or Intel
-- The Slack desktop app, running and visible in a signed-in, unlocked macOS session
-- Accessibility access for the app launching the CLI, under **System Settings › Privacy & Security › Accessibility**
-- Swift 6 or later to build from source
+- The binary targets macOS 14 or later on Apple silicon and Intel.
+- Sign in to the Slack desktop app and keep it open and visible in an unlocked macOS GUI session.
+- In **System Settings › Privacy & Security › Accessibility**, grant access to Terminal or whichever app launches `slack-remote`.
 
 ## Install
 
-From a source checkout, run:
+### Install from the ZIP
+
+Save `slack-remote-1.0.0-macos.zip` and `slack-remote-1.0.0-macos.zip.sha256` from the private item to the same folder. The ZIP contains the ad hoc signed universal binary, this README, and the command docs.
+
+In Terminal, change to that folder and run the block below. If the SHA-256 check fails, the install stops.
 
 ```sh
-scripts/install.sh
-export PATH="$HOME/.local/bin:$PATH"
+(
+  shasum -a 256 -c slack-remote-1.0.0-macos.zip.sha256 &&
+  unpack_dir=$(mktemp -d) &&
+  trap 'rm -rf "$unpack_dir"' EXIT &&
+  unzip slack-remote-1.0.0-macos.zip slack-remote -d "$unpack_dir" &&
+  mkdir -p "$HOME/.local/bin" &&
+  install -m 755 "$unpack_dir/slack-remote" "$HOME/.local/bin/slack-remote"
+) &&
+export PATH="$HOME/.local/bin:$PATH" &&
 slack-remote --version
 ```
 
-Pass `--prefix DIR` to install to `DIR/bin`. Use `scripts/uninstall.sh` with the same prefix to remove the binary while keeping local configuration and support files. For a release archive, verify the companion checksum with `shasum -a 256 -c slack-remote-1.0.0-macos.zip.sha256`, then unzip and put the executable on your `PATH`. The archive contains an ad hoc signed universal binary.
+Add the `export PATH` line to `~/.zshrc` if you want `slack-remote` on your `PATH` in future zsh sessions.
+
+### Build from source
+
+Use an Xcode toolchain with Swift 6 or later. Clone the `slack-remote-v0.1` branch of the private repository and run the installer.
+
+```sh
+git clone --branch slack-remote-v0.1 git@github.com:thatjuan/slack-remote.git &&
+cd slack-remote &&
+scripts/install.sh
+```
+
+The installer puts `slack-remote` in `~/.local/bin`. Run the `export PATH` and `slack-remote --version` lines above. Pass `--prefix DIR` to install into `DIR/bin`, then add that directory to `PATH`. To remove the binary, run `scripts/uninstall.sh` with the same prefix option.
 
 ## First run
 
-Run `slack-remote doctor` from the app you plan to use for scripting and resolve any failed checks. In your Slack workspace, run `slack-remote whoami --save` to record the signed-in account. Open a conversation in Slack and run `slack-remote current` to get its team and conversation IDs. Save those IDs under a name you can pass to `--dest`:
+Run `slack-remote doctor` from the app that will launch the CLI and resolve any failed checks. In each workspace you plan to write to, run `slack-remote whoami --save` to record the active account in your local config.
+
+To set up a named destination, open the conversation in Slack and run `slack-remote current`. Put the returned `team` and `conversation` IDs in `TEAM_ID` and `CONVERSATION_ID`, then save and use the alias.
 
 ```sh
 slack-remote dest add notes --team "$TEAM_ID" --channel "$CONVERSATION_ID"
