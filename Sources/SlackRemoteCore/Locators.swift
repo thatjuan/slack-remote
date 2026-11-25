@@ -43,6 +43,8 @@ public enum Locators {
     // Overlays and account
     public static let modalContent = "ReactModal__Content"
     public static let modalOverlay = Locator(name: "modalOverlay", role: "AXGroup", classes: ["ReactModal__Overlay"])
+    static let informationalTooltip = Locator(name: "informationalTooltip", role: "AXGroup",
+                                               subrole: "AXUserInterfaceTooltip", classes: ["c-popover__content"])
     public static let selfDM = "p-channel_sidebar__channel--im-you"
     public static let searchButton = Locator(name: "searchButton", role: "AXButton", classes: ["p-top_nav__search"])
     public static let searchClear = Locator(name: "searchClear", role: "AXButton",

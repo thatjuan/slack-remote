@@ -36,6 +36,24 @@ struct OverlaysTests {
         #expect(fixture.webArea.all(Locators.primaryView).count == 1)
     }
 
+    @Test func informationalTooltipLeavesPrimaryViewUsableWithoutBeingClosed() throws {
+        let fixture = try ComposerFixture()
+        let tooltip = FakeNode(role: "AXGroup", subrole: "AXUserInterfaceTooltip",
+                               domClasses: [Locators.modalContent, "c-popover__content"])
+        let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
+        fixture.webArea.children += [tooltip, backdrop]
+        _ = try SlackWindow.verify(fixture.view.destination, in: fixture.tree)
+        #expect(backdrop.performCalls.isEmpty)
+
+        let modal = FakeNode(role: "AXGroup", subrole: "AXApplicationDialog", domClasses: [Locators.modalContent])
+        fixture.webArea.children.append(modal)
+        #expect(Overlays.open(in: fixture.tree) == [.modal])
+
+        fixture.webArea.children = [tooltip, backdrop]
+        #expect(Overlays.open(in: fixture.tree) == [.modal])
+        #expect(backdrop.performCalls.isEmpty)
+    }
+
     @Test func reportsModalThatDidNotClose() throws {
         let fixture = try ComposerFixture()
         let overlay = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)

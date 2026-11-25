@@ -3,9 +3,9 @@ import Foundation
 public enum OverlayKind: Equatable { case modal, sheet }
 
 public enum Overlays {
-    /// Kinds currently open in Slack's windows, in tree order.
+    /// Blocking overlays currently open in Slack's windows, in tree order.
     public static func open(in tree: SlackTree) -> [OverlayKind] {
-        tree.windows.flatMap { $0.descendants().compactMap(kind) }
+        tree.windows.flatMap { blockingNodes(in: $0).map(\.kind) }
     }
 
     public static func requireUnblocked(in tree: SlackTree) throws {
@@ -18,7 +18,7 @@ public enum Overlays {
             try tree.refresh()
             let window = try SlackWindow.currentWindow(in: tree).window
             let overlays = open(in: tree)
-            if overlays == [.modal], window.descendants().contains(where: { kind($0) == .modal }) {
+            if overlays == [.modal], blockingNodes(in: window).contains(where: { $0.kind == .modal }) {
                 let backdrop = try window.one(Locators.modalOverlay)
                 // AX can report an error for a press that Slack already handled.
                 try? backdrop.perform(.press)
@@ -51,8 +51,8 @@ public enum Overlays {
             let modal: (any UINode)? = try Poll.until(deadline) {
                 try tree.refresh()
                 let window = try SlackWindow.currentWindow(in: tree).window
-                let modals = window.descendants().filter { kind($0) == .modal }
-                return open(in: tree) == [.modal] ? modals.first : nil
+                let modals = blockingNodes(in: window).filter { $0.kind == .modal }
+                return open(in: tree) == [.modal] ? modals.first?.node : nil
             }
             guard let modal else { throw RemoteError.timeout }
             observedModal = true
@@ -74,5 +74,16 @@ public enum Overlays {
         if node.role == "AXSheet" { return .sheet }
         if node.domClasses.contains(Locators.modalContent) { return .modal }
         return nil
+    }
+
+    private static func blockingNodes(in window: any UINode) -> [(kind: OverlayKind, node: any UINode)] {
+        let nodes = window.descendants()
+        let hasPrimaryView = nodes.filter(Locators.primaryView.matches).count == 1
+        return nodes.compactMap { node in
+            guard let kind = kind(node) else { return nil }
+            // Slack uses ReactModal for informational tooltips while the conversation stays usable.
+            if kind == .modal, hasPrimaryView, Locators.informationalTooltip.matches(node) { return nil }
+            return (kind, node)
+        }
     }
 }
