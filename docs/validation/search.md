@@ -25,7 +25,26 @@ The live checks used stock Slack 4.53.292 on main-mac with the conversation filt
 | Unknown type | Exit 13 with the visible source choices in the error details. |
 | Ctrl-C after modal open | Exit 130 and an explicit `overlay_left_open` error. A separate, locked cleanup pressed the owned backdrop and verified the restored conversation. |
 
-The release build, all 94 fixture tests, and the diff check passed for the live run above. The cancellation follow-up verified cleanup before Accessibility mode restoration, a replacement popup left untouched, and restoration when interrupted during paging. A fixture process also received an actual SIGINT before submission and during paging. The updated signal path awaits a live retest.
+The release build, all 94 fixture tests, and the diff check passed for the live run above. The cancellation follow-up verified cleanup before Accessibility mode restoration, a replacement popup left untouched, and restoration when interrupted during paging. A fixture process also received an actual SIGINT before submission and during paging.
+
+## Release regression retest
+
+The live checks used stock Slack 4.53.292 on main-mac with the same locked notes fixture.
+
+| Check | Outcome |
+| --- | --- |
+| Scoped People and Channels | Both returned exit 13 and `unsupported_destination` before the modal-open trace. Notes remained current with no search pane. |
+| Scoped Messages | 12 identified matches. The result retained the notes filter, reported `complete: true` and restored notes. |
+| Scoped Files | Three file results exposed identifiers. The result retained the notes filter, reported `complete: true` and restored notes. |
+| Workspace People | The signed-in fixture returned one labeled result and restored notes. The result grid exposed no user identifier, so the response had `user: null`. |
+| SIGINT after modal open | Exit 130, empty stdout and clean stderr apart from debug traces. Doctor passed all eight checks. The exact notes conversation returned with no search pane. |
+| SIGINT after results were ready | Exit 130 and empty stdout. Doctor passed all eight checks. The exact notes conversation returned with no search pane. |
+
+Immediately after opening search, Slack exposed a close button that acknowledged a press and left the popup visible. Refreshing the Accessibility mode exposed the associated backdrop and changed the popup's Accessibility reference. Cleanup now verifies the same unique popup identifier and search field in the original window and location after refreshing its own Accessibility mode. The fixtures exercise interruption before the first popup snapshot, a delayed backdrop and a replacement popup with the same identifier.
+
+Cleanup verifies that the Sources menu stays closed before reopening it to check the selected source. The People source rendered an `AXTable` with class `p-bp__grid`. Reading the name button under each row cell recovered the label and avoided duplicate cells exposed through column nodes. After one later People directory run, Slack reopened the previous scoped search pane in notes. A locked cleanup closed it through its verified header before the workspace People retest.
+
+The combined release build, 157 Swift Testing tests, 15 XCTest tests and `git diff --check` passed on main-mac.
 
 ## Remaining live validation in priority order
 
@@ -35,6 +54,6 @@ Run these checks in an exclusive main-mac Slack session after upload validation.
 | --- | --- | --- |
 | 1 | Take the generated file name and unique search token from upload validation. Reuse three approved synthetic messages containing that token in notes. Search for it with `--in notes` and then with `--type files --in notes`. | The three messages and the uploaded file appear in their respective searches. Compare their structural IDs with those observed at seeding and verify return to the starting conversation. |
 | 2 | Use a distinct synthetic token in the verified self-DM. Search with the self alias, then repeat with `--open 0`. | The In toggle matches the saved account, and the exact self-DM message is rendered after Jump. |
-| 3 | Search the DMs source for the self-DM token and the Canvases source for an approved synthetic canvas shared in notes. Search People and Channels for known synthetic person and channel fixtures at workspace scope. | Record positive results with structural IDs or explicit nulls. Confirm that People and Channels with a conversation flag still fail without returning results. Leave any source pending until its fixture is available. |
+| 3 | Search the DMs source for the self-DM token and the Canvases source for an approved synthetic canvas shared in notes. Search Channels for a known synthetic channel fixture at workspace scope. | Record positive results with structural IDs or explicit nulls. Leave any source pending until its fixture is available. |
 | 4 | Use a synthetic result set large enough to cross a client page boundary. Search within the designated conversation with small `--max-results` and `--max-pages` bounds, then repeat past the boundary. | Record whether the last-row action reveals another page, the true stop reason, ordering, duplication, and restoration. Report a stall or client-imposed limit if the end cannot be verified. |
-| 5 | Interrupt a notes search before submission and again while reading its results. | Exit 130, no results printed, and `doctor` plus an exact starting-conversation check succeed after cleanup. Record an explicit cleanup error if the client blocks restoration. |
+| 5 | Interrupt a notes search during a page transition once a multi-page fixture is available. | Exit 130, no results printed, and `doctor` plus an exact starting-conversation check succeed after cleanup. Record an explicit cleanup error if the client blocks restoration. |

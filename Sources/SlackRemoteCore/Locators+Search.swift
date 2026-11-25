@@ -34,6 +34,11 @@ extension Locators {
         $0.domClasses.contains(searchResultRow)
     }
     static let searchResultRow = "listitem__iBnNh"
+    static let searchPeopleGrid = Locator(name: "searchPeopleGrid", role: "AXTable", classes: ["p-bp__grid"])
+    static let searchPeopleRow = Locator(name: "searchPeopleRow", role: "AXRow", classes: ["p-bp__grid_row"])
+    static let searchPersonCell = Locator(name: "searchPersonCell", role: "AXCell", classes: ["p-bp__grid_cell"])
+    static let searchPersonName = Locator(name: "searchPersonName", role: "AXButton",
+                                          classes: ["p-member_profile_base_entity__name--link"])
     static let searchResultSortID = "search-filter-sort-filter"
     static let searchResultEmpty = "c-empty_state"
     static let searchSources = Locator(name: "searchSources", role: "AXPopUpButton", idPrefix: "search-filters-sources-filter")

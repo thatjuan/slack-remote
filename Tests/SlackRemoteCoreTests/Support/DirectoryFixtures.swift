@@ -1,5 +1,6 @@
 import Foundation
 @testable import SlackRemoteCore
+import XCTest
 
 enum DirectoryFixtures {
     static let destination = Destination(team: TeamID("T0AAAAAAA")!, conversation: ConversationID("C0BBBBBBB")!)
@@ -20,6 +21,80 @@ enum DirectoryFixtures {
 
     static func bounds(items: Int = 500, pages: Int = 100) -> PageBounds {
         return PageBounds(maxItems: items, maxPages: pages, deadline: Date().addingTimeInterval(2))
+    }
+}
+
+final class ChannelBrowserFixture {
+    let browse = FakeNode(role: "AXMenuItem", domClasses: Locators.addChannelsMenuItem.classes,
+                          domID: "menu-8-1", attributes: [.title: .string("Browse channels")])
+    let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
+    let replacement = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes, children: [
+        FakeNode(role: "AXGroup", subrole: "AXApplicationDialog", domClasses: [Locators.modalContent]),
+    ])
+    let tree: SlackTree
+    private let web: FakeNode
+    private let startingChildren: [any UINode]
+    private let directory: FakeNode
+    private(set) var links: [URL] = []
+
+    init() throws {
+        let window = SlackFixture.window()
+        web = try XCTUnwrap(window.one(Locators.webArea) as? FakeNode)
+        startingChildren = web.children
+        tree = SlackTree(windows: [window])
+        let tab = FakeNode(role: "AXRadioButton", subrole: "AXTabButton",
+                           domClasses: Locators.directoryTab.classes + [Locators.activeTabClass], domID: "channels")
+        let list = FakeNode(role: "AXList", domClasses: Locators.directoryChannels.classes, children: [
+            Self.channel("C0AAAAAAA", name: "General"),
+            Self.channel("C0BBBBBBB", name: "Notes"),
+        ])
+        directory = FakeNode(role: "AXGroup", subrole: "AXTabPanel", domClasses: Locators.directoryTabPanel.classes,
+                             children: [tab, list])
+        let opener = FakeNode(role: "AXPopUpButton")
+        let row = DirectoryFixtures.sidebarRow(Locators.sidebarEndID)
+        row.children = [opener]
+        let sidebar = try XCTUnwrap(window.one(Locators.sidebarList) as? FakeNode)
+        sidebar.children.append(row)
+        let menu = FakeNode(role: "AXMenu", domClasses: ["c-menu__items"], children: [
+            FakeNode(role: "AXMenuItem", domClasses: Locators.addChannelsMenuItem.classes,
+                     domID: "menu-8-0", attributes: [.title: .string("Create a new channel")]),
+            browse,
+        ])
+        backdrop.children = [FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], children: [menu])]
+        opener.onPerform = { [weak self] _ in
+            guard let self else { return }
+            web.children.append(backdrop)
+        }
+        backdrop.onPerform = { [weak self] _ in
+            guard let self else { return }
+            web.children = startingChildren
+        }
+        browse.onPerform = { [weak self] _ in self?.arriveInDirectory() }
+    }
+
+    func arriveInDirectory() {
+        web.attributes[.url] = .string("https://app.slack.com/client/T0AAAAAAA")
+        web.children = [directory]
+    }
+
+    func replaceMenu() {
+        arriveInDirectory()
+        web.children.append(replacement)
+    }
+
+    func navigator() -> Navigator {
+        Navigator(openLink: { [self] link in
+            links.append(link)
+            web.attributes[.url] = .string("https://app.slack.com/client/T0AAAAAAA/C0BBBBBBB")
+            web.children = startingChildren
+        }, frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
+    }
+
+    private static func channel(_ id: String, name: String) -> FakeNode {
+        let label = FakeNode(role: "AXStaticText", attributes: [.value: .string(name)])
+        let content = FakeNode(role: "AXGroup", domClasses: ["c-channel_search_result"], children: [label])
+        return FakeNode(role: "AXGroup", domClasses: Locators.directoryChannelRow.classes,
+                        domID: id, children: [content])
     }
 }
 

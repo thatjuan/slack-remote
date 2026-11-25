@@ -12,20 +12,24 @@ public enum Directory {
     public static func channels(team: TeamID, app: SlackApp, in tree: SlackTree,
                                 bounds: PageBounds) throws -> Paged<SidebarList.Channel> {
         try withView(.channels, team: team, app: app, in: tree, deadline: bounds.deadline) {
-            func rendered() throws -> [(key: ConversationID, node: any UINode, item: SidebarList.Channel)] {
-                let list = try currentList(.channels, team: team, in: tree)
-                let rows = list.children.filter(Locators.directoryChannelRow.matches)
-                return try identifiedRows(rows) { row in
-                    row.domID.flatMap(ConversationID.init(rawValue:))
-                }.map { id, row in
-                    let item = SidebarList.Channel(conversation: id, name: label(in: row), kind: .channel,
-                                                   selected: false, hasDraft: false)
-                    return (id, row, item)
-                }
-            }
-            return try VirtualListPager.collect(direction: .towardEnd, bounds: bounds, rendered: rendered,
-                                                reachedBoundary: { _ in false }, atEnd: { false })
+            try readChannels(team: team, in: tree, bounds: bounds)
         }
+    }
+
+    static func readChannels(team: TeamID, in tree: SlackTree, bounds: PageBounds) throws -> Paged<SidebarList.Channel> {
+        func rendered() throws -> [(key: ConversationID, node: any UINode, item: SidebarList.Channel)] {
+            let list = try currentList(.channels, team: team, in: tree)
+            let rows = list.children.filter(Locators.directoryChannelRow.matches)
+            return try identifiedRows(rows) { row in
+                row.domID.flatMap(ConversationID.init(rawValue:))
+            }.map { id, row in
+                let item = SidebarList.Channel(conversation: id, name: label(in: row), kind: .channel,
+                                               selected: false, hasDraft: false)
+                return (id, row, item)
+            }
+        }
+        return try VirtualListPager.collect(direction: .towardEnd, bounds: bounds, rendered: rendered,
+                                            reachedBoundary: { _ in false }, atEnd: { false })
     }
 
     public static func people(team: TeamID, app: SlackApp, in tree: SlackTree,
@@ -97,25 +101,71 @@ public enum Directory {
         }
     }
 
-    private static func openFromSidebar(in tree: SlackTree, deadline: Date) throws {
-        try Overlays.withModal(in: tree, deadline: deadline, opening: {
+    static func openFromSidebar(in tree: SlackTree, deadline: Date) throws {
+        try tree.refresh()
+        try Overlays.requireUnblocked(in: tree)
+        var ownedPopup: (any UINode)?
+        let result = Result {
             let client = try SlackWindow.currentWindow(in: tree)
             let sidebar = try client.window.one(Locators.sidebarList)
             let rows = sidebar.all(Locators.sidebarRow).filter { $0.domID == Locators.sidebarEndID }
             guard rows.count == 1, let row = rows.first else {
                 throw RemoteError.uiDrift(locator: Locators.sidebarEndID, found: rows.count)
             }
+            guard Date() < deadline else { throw RemoteError.timeout }
             try row.one(Locators.addChannelsButton).perform(.press)
-        }) { modal in
-            // Slack gives both items in this web menu generated IDs and the same classes.
-            let choices = modal.all(Locators.addChannelsMenuItem).filter {
-                $0.string(.title)?.localizedCaseInsensitiveCompare("Browse channels") == .orderedSame
-            }
+            guard let popup = try Poll.until(deadline, {
+                try tree.refresh()
+                let client = try SlackWindow.currentWindow(in: tree)
+                let matches = client.window.descendants().filter { node in
+                    Overlays.kind(node) == .modal
+                        && node.all(Locators.addChannelsMenuItem).contains(where: Locators.isBrowseChannels)
+                }
+                guard matches.count <= 1 else {
+                    throw RemoteError.uiDrift(locator: Locators.addChannelsMenuItem.name, found: matches.count)
+                }
+                guard !matches.isEmpty else { return nil as (any UINode)? }
+                guard Overlays.open(in: tree) == [.modal] else { throw RemoteError.uiBlocked }
+                return matches.first
+            }) else { throw RemoteError.timeout }
+            ownedPopup = popup
+            let choices = popup.all(Locators.addChannelsMenuItem).filter(Locators.isBrowseChannels)
             guard choices.count == 1, let choice = choices.first else {
                 throw RemoteError.uiDrift(locator: Locators.addChannelsMenuItem.name, found: choices.count)
             }
             try choice.perform(.press)
         }
+        // Selecting Browse replaces the conversation with the directory. Cleanup
+        // only waits for the owned menu to close; withView verifies the new view.
+        try tree.withCleanup {
+            try tree.refresh()
+            guard !Overlays.open(in: tree).isEmpty else { return }
+            if case .success = result {
+                let dismissed: Bool? = try Poll.until(tree.cleanupDeadline(after: 0.5)) {
+                    try tree.refresh()
+                    return Overlays.open(in: tree).isEmpty ? true : nil
+                }
+                if dismissed == true { return }
+            }
+            guard let ownedPopup else { throw RemoteError.overlayLeftOpen }
+            let window = try SlackWindow.currentWindow(in: tree).window
+            let backdrops = window.all(Locators.modalOverlay).filter { backdrop in
+                backdrop.descendants().contains { popup in
+                    guard Overlays.kind(popup) == .modal else { return false }
+                    if let original = ownedPopup as? AXNode, let refreshed = popup as? AXNode {
+                        return original.referencesSameElement(as: refreshed)
+                    }
+                    return ownedPopup as AnyObject === popup as AnyObject
+                }
+            }
+            guard backdrops.count == 1, let backdrop = backdrops.first else { throw RemoteError.overlayLeftOpen }
+            try? backdrop.perform(.press)
+            guard try Poll.until(tree.cleanupDeadline(after: 2), {
+                try tree.refresh()
+                return Overlays.open(in: tree).isEmpty ? true : nil
+            }) == true else { throw RemoteError.overlayLeftOpen }
+        }
+        try result.get()
     }
 
     private static func directoryClient(team: TeamID, in tree: SlackTree) throws -> ClientWindow? {
@@ -160,16 +210,22 @@ public enum Directory {
     /// Preserve the starting conversation when an operation opens a different view.
     public static func restoringConversation<T>(app: SlackApp, in tree: SlackTree,
                                                  _ body: () throws -> T) throws -> T {
+        try restoringConversation(in: tree, navigator: Navigator(slackApp: app), body)
+    }
+
+    static func restoringConversation<T>(in tree: SlackTree, navigator: Navigator,
+                                         _ body: () throws -> T) throws -> T {
         try tree.refresh()
         let start = try SlackWindow.currentWindow(in: tree)
         guard let destination = start.location.destination else { throw RemoteError.unsupportedDestination }
         _ = try SlackWindow.verify(destination, in: tree)
         let result = Result { try body() }
         try tree.refresh()
+        guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
         let current = try SlackWindow.currentWindow(in: tree)
         if current.location != start.location {
-            _ = try Navigator(slackApp: app).navigate(to: destination, user: nil, interrupt: true,
-                                                      in: tree, deadline: Date().addingTimeInterval(5))
+            _ = try navigator.navigate(to: destination, user: nil, interrupt: true,
+                                       in: tree, deadline: Date().addingTimeInterval(5))
         }
         let restored = try SlackWindow.currentWindow(in: tree)
         guard restored.location.destination == destination else {

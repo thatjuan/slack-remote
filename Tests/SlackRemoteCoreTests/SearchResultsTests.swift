@@ -30,6 +30,20 @@ struct SearchResultsTests {
     }
 
     @Test(arguments: ["people", "channels"])
+    func explicitConversationScopeIsRejectedBeforeOpeningAWorkspaceSource(_ source: String) throws {
+        let error = #expect(throws: RemoteError.self) {
+            try SearchResults.requireSupportedConversation(Fixture.result.conversation, for: source)
+        }
+        #expect(error?.code == "unsupported_destination")
+        try SearchResults.requireSupportedConversation(nil, for: source)
+    }
+
+    @Test(arguments: ["messages", "files"])
+    func explicitConversationScopeIsSupportedForMessagesAndFiles(_ source: String) throws {
+        try SearchResults.requireSupportedConversation(Fixture.result.conversation, for: source)
+    }
+
+    @Test(arguments: ["people", "channels"])
     func workspaceSourcesLeaveAnActiveInFilterUntouched(_ source: String) throws {
         let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
         fixture.filesTab.domID = source
@@ -39,6 +53,32 @@ struct SearchResultsTests {
         #expect(error?.requiresUnscopedSearch == true)
         #expect(error?.available == ["messages", source])
         #expect(fixture.filesTab.performCalls.isEmpty)
+    }
+
+    @Test func workspacePeopleSearchReadsTheSelectedSource() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        let sources = fixture.showSources()
+        let snapshot = try fixture.read(type: "people", timeout: 4)
+        #expect(snapshot.results.map(\.content) == [.person(UserID("U0EEEEEEE"), label: "Ada")])
+        #expect(sources.performCalls == [.press, .press])
+    }
+
+    @Test func workspacePeopleSearchReadsTheGridWithoutColumnDuplicates() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        fixture.showSources(peopleGrid: true)
+        let snapshot = try fixture.read(type: "people", timeout: 4)
+        #expect(snapshot.results.map(\.content) == [.person(nil, label: "Ada")])
+        #expect(snapshot.complete)
+    }
+
+    @Test func scopedFilesKeepTheirFilterAndStructuredResults() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        let sources = fixture.showSources(withBackdrop: false, ignoreFirstDismissal: true)
+        fixture.showConversationFilter()
+        let snapshot = try fixture.read(type: "files", timeout: 4, conversation: Fixture.result.conversation)
+        #expect(snapshot.results.map(\.content) == [.file("F0DDDDDDD", name: "fixture.txt", conversation: nil)])
+        #expect(sources.performCalls == [.press, .press, .press, .press])
+        #expect(Overlays.open(in: fixture.tree).isEmpty)
     }
 
     @Test func doesNotTreatDisplayedTextAsAnID() throws {

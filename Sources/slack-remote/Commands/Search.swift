@@ -121,6 +121,7 @@ struct Search: ParsableCommand {
         let requested = try conversationFilter(using: config)
         let searchTeam = team ?? requested?.team ?? start.team
         if let requested, requested.team != searchTeam { throw RemoteError.unsupportedDestination }
+        try SearchResults.requireSupportedConversation(requested?.conversation, for: type)
         let account = config?.accounts.first { $0.team == searchTeam }
         let anchor: Destination
         if let requested {
@@ -155,7 +156,9 @@ struct Search: ParsableCommand {
             }) {
                 try SearchResults.read(type: type, team: searchTeam, conversation: requested?.conversation, in: tree,
                                        bounds: PageBounds(maxItems: maxResults, maxPages: maxPages, deadline: deadline),
-                                       allowPartial: allowPartial)
+                                       allowPartial: allowPartial, onReady: {
+                    if options.debug { CommandSupport.debug("Search results ready") }
+                })
             }
             let opened = try open.map { try SearchResults.open($0, from: snapshot, team: searchTeam,
                                                                in: tree, deadline: deadline) }

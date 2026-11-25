@@ -71,10 +71,23 @@ final class SearchModalFixture {
     func replaceSearchPopup() -> (clear: FakeNode, backdrop: FakeNode) {
         let clear = FakeNode(role: "AXButton", domClasses: ["c-search__input_box__clear"])
         let replacement = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Content"],
-                                   domID: "fixture-replacement-popup", children: [clear])
+                                   domID: modal.domID, children: [clear])
         let backdrop = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Overlay"], children: [replacement])
         web.children = [backdrop]
         return (clear, backdrop)
+    }
+
+    func showPopup(backdropReady: Bool, replaceAXNode: Bool = false) {
+        let node = replaceAXNode
+            ? FakeNode(role: modal.role, domClasses: modal.domClasses, domID: modal.domID, children: modal.children)
+            : modal
+        backdrop.children = [node]
+        wrapper.children = [backdropReady ? backdrop : node]
+        web.children = [wrapper]
+    }
+
+    func addCloseControl(_ control: FakeNode) {
+        modal.children.append(control)
     }
 
     func run(query: String = "slack-remote test", filtered: Bool = true, in session: SlackTree? = nil,
@@ -201,6 +214,72 @@ final class SearchResultsFixture {
         root.children.append(FakeNode(role: "AXButton", domClasses: [Locators.searchFilterActive], domID: "filter-in"))
     }
 
+    @discardableResult
+    func showSources(withBackdrop: Bool = true, ignoreFirstDismissal: Bool = false,
+                     peopleGrid: Bool = false) -> FakeNode {
+        root.children.removeAll { Locators.searchTab.matches($0) }
+        let sources = FakeNode(role: "AXPopUpButton", domID: "search-filters-sources-filter")
+        let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
+        let popup = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], domID: "fixture-sources-popup")
+        let menu = FakeNode(role: "AXMenu", domClasses: Locators.searchSourceMenu.classes)
+        let titles = ["Messages", "DMs", "Files", "People", "Channels", "Canvases"]
+        let items = titles.enumerated().map { index, title in
+            FakeNode(role: "AXMenuItem",
+                     domClasses: Locators.searchSourceItem.classes + (index == 0 ? [Locators.searchSourceChecked] : []),
+                     domID: "menu-12-\(index)", attributes: [.title: .string(title)])
+        }
+        menu.children = items
+        popup.children = [menu]
+        backdrop.children = [popup]
+        let surface = withBackdrop ? backdrop : popup
+        var ignoreDismissal = ignoreFirstDismissal
+        sources.onPerform = { [web] _ in
+            if web.children.contains(where: { $0 as AnyObject === surface }) {
+                if ignoreDismissal {
+                    ignoreDismissal = false
+                    return
+                }
+                web.children.removeAll { $0 as AnyObject === surface }
+            } else {
+                web.children.append(surface)
+            }
+        }
+        backdrop.onPerform = { [web] _ in web.children.removeAll { $0 as AnyObject === backdrop } }
+        for (index, item) in items.enumerated() {
+            item.onPerform = { [weak self, weak menu, weak surface] _ in
+                guard let self, let menu, let surface else { return }
+                for (slot, node) in menu.children.enumerated() {
+                    guard let option = node as? FakeNode else { continue }
+                    option.domClasses = Locators.searchSourceItem.classes
+                        + (slot == index ? [Locators.searchSourceChecked] : [])
+                }
+                if index == 2 { list.children = [Self.row(id: "F0DDDDDDD", name: "fixture.txt")] }
+                if index == 3 {
+                    if peopleGrid {
+                        let name = FakeNode(role: "AXButton", domClasses: Locators.searchPersonName.classes,
+                                            children: [FakeNode(role: "AXStaticText", attributes: [.value: .string("Ada")])])
+                        let cell = FakeNode(role: "AXCell", domClasses: Locators.searchPersonCell.classes,
+                                            children: [name])
+                        let empty = FakeNode(role: "AXCell", domClasses: Locators.searchPersonCell.classes)
+                        list.role = "AXTable"
+                        list.subrole = nil
+                        list.domClasses = Locators.searchPeopleGrid.classes
+                        list.children = [
+                            FakeNode(role: "AXColumn", children: [cell]),
+                            FakeNode(role: "AXRow", domClasses: Locators.searchPeopleRow.classes, children: [cell, empty]),
+                        ]
+                    } else {
+                        list.children = [Self.row(id: "U0EEEEEEE", name: "Ada")]
+                    }
+                    root.children.removeAll { $0.domID == "filter-in" }
+                }
+                web.children.removeAll { $0 as AnyObject === surface }
+            }
+        }
+        root.children.append(sources)
+        return sources
+    }
+
     func navigator(restores: Bool = true) -> Navigator {
         Navigator(openLink: { [self] url in
             links.append(url)
@@ -209,8 +288,9 @@ final class SearchResultsFixture {
     }
 
     func read(type: String = "messages", maxItems: Int = 50, maxPages: Int = 20,
-              timeout: TimeInterval = 1, allowPartial: Bool = false) throws -> SearchResults.Snapshot {
-        try SearchResults.read(type: type, team: Self.team, in: tree,
+              timeout: TimeInterval = 1, allowPartial: Bool = false,
+              conversation: ConversationID? = nil) throws -> SearchResults.Snapshot {
+        try SearchResults.read(type: type, team: Self.team, conversation: conversation, in: tree,
                                bounds: .init(maxItems: maxItems, maxPages: maxPages,
                                              deadline: Date().addingTimeInterval(timeout)),
                                allowPartial: allowPartial)
