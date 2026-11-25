@@ -1,6 +1,19 @@
 import SlackRemoteCore
 import Testing
 
+@Test func revealsOnlyExactEmojiImageTitlesOnRequest() {
+    let image = FakeNode(role: "AXImage", domClasses: ["c-emoji"], attributes: [.title: .string(":tada:")])
+    let invalid = FakeNode(role: "AXImage", domClasses: ["c-emoji"], attributes: [.title: .string(":Private:")])
+    let other = FakeNode(role: "AXImage", attributes: [.title: .string(":unrelated:")])
+    let root = FakeNode(role: "AXWindow", children: [image, invalid, other])
+    let standard = Inspector.describe(root, scope: .window, maxDepth: nil)
+    let named = Inspector.describe(root, scope: .window, maxDepth: nil, emojiNames: true)
+    #expect(!standard.contains("title="))
+    #expect(named.contains("title=:tada:"))
+    #expect(!named.contains("Private"))
+    #expect(!named.contains("unrelated"))
+}
+
 struct InspectorTests {
     @Test func readsStructureOnlyMasksIDsAndSkipsEditableDescendants() {
         let child = FakeNode(role: "AXStaticText", domID: "must-not-visit")

@@ -105,7 +105,11 @@ public enum RemoteError: Error {
         case .slackWindowUnavailable: return "Slack is hidden or its client window is minimized."
         case .slackNotReady: return "Slack has no signed-in client window."
         case .treeUnavailable: return "Slack's Accessibility tree did not become available and settle in time."
-        case .uiDrift: return "Slack's Accessibility tree did not match the expected structure."
+        case .uiDrift(let locator, _):
+            if locator == "reactionEmojiIdentity" {
+                return "Slack remote cannot identify an existing reaction and cannot tell which emoji it would toggle."
+            }
+            return "Slack's Accessibility tree did not match the expected structure."
         case .ambiguousWindow: return "Slack has more than one candidate client window."
         case .uiBlocked: return "A dialog is blocking the Slack window."
         case .destinationMismatch: return "Slack did not arrive at the requested conversation."

@@ -11,4 +11,6 @@ The command accepts the `--user`, `--route`, and `--interrupt` options described
 
 `unsafe_text` covers blank text, more than 4,000 characters, control characters other than newline and tab, a leading `/` after whitespace, and standalone reaction shortcuts such as `+:tada:`. `--allow-broadcast` permits `@channel`, `@here`, and `@everyone`. A different draft or pending content returns `draft_conflict`. A configured write allowlist can return `write_not_allowed`, and a configured account must verify.
 
+`--text` accepts Unicode emoji and shortcodes such as `:tada:`. A shortcode name can use lowercase ASCII letters, digits, underscores, plus signs, apostrophes, and hyphens. An invalid shortcode returns `unsafe_text`. If Slack's composer read-back omits an emoji, the command stops with `write_unverified` and leaves the draft. In `read`, emoji images with a Slack shortcode appear in shortcode form.
+
 When a failure reports `draftLeft: true` before the press, rerun with the same text to reuse a matching draft or clear it with `draft clear --expect-text`. If the error is `send_unconfirmed`, Slack may have sent the message. Use `read` or check Slack before retrying.

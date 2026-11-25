@@ -8,6 +8,9 @@ struct Read: ParsableCommand {
     @OptionGroup var options: CommandOptions
     @OptionGroup var target: DestinationOptions
     @Option(help: "Keep this many of the newest rendered messages.") var limit: Int?
+    @Option(help: "Read the thread for this Slack message timestamp.") var thread: String?
+    @Flag(help: "Close the verified thread after reading it.") var closeThread = false
+    @Flag(help: "Show the thread read plan without changing Slack.") var dryRun = false
     @Flag(help: "Page through older messages in the requested conversation.") var history = false
     @Option(help: "Return messages newer than this Slack timestamp.") var since: String?
     @Option(help: "Maximum messages to collect, up to 2,000 (default: 200).") var maxMessages: Int?
@@ -19,6 +22,7 @@ struct Read: ParsableCommand {
         let conversation: String
         let route: NavigationResult.Route
         var scope = "rendered"
+        var thread: String?
         var complete = false
         var stopReason = StopReason.limit
         var pages = 0
@@ -31,7 +35,7 @@ struct Read: ParsableCommand {
     }
 
     func validate() throws {
-        try target.validate(requireDestination: history)
+        try target.validate(requireDestination: history || thread != nil)
         if let limit, limit < 0 {
             throw ValidationError("--limit must be zero or greater.")
         }
@@ -42,6 +46,12 @@ struct Read: ParsableCommand {
         if let since, !MessageReader.isTimestamp(since) {
             throw ValidationError("--since must be a Slack message timestamp.")
         }
+        if let thread, !MessageReader.isTimestamp(thread) {
+            throw ValidationError("--thread must be a Slack message timestamp.")
+        }
+        if thread == nil && (closeThread || dryRun) {
+            throw ValidationError("--close-thread and --dry-run require --thread.")
+        }
         if let maxMessages, !(1...2000).contains(maxMessages) {
             throw ValidationError("--max-messages must be between 1 and 2000.")
         }
@@ -49,11 +59,18 @@ struct Read: ParsableCommand {
     }
 
     func run() throws {
-        try CommandSupport.run("read", options: options) { app, tree, deadline in
+        try CommandSupport.run("read", options: options) { app, tree, deadline -> Previewable<Result> in
             let destination: Destination
             let route: NavigationResult.Route
             let config = target.hasDestination ? try Config.load() : nil
+            let idle = WriteCommand.idleCheck(target)
             if let requested = try target.resolve(using: config) {
+                if dryRun, let thread {
+                    return .preview(try DryRun.preview(.readThread(rootTs: thread, history: history, close: closeThread),
+                        destination: requested, user: target.user, preference: target.route.preference, config: config,
+                        in: tree, deadline: deadline, warn: app.warn))
+                }
+                if thread != nil { try idle() }
                 destination = requested
                 route = try target.navigate(to: destination, app: app, in: tree, deadline: deadline).route
             } else {
@@ -68,22 +85,32 @@ struct Read: ParsableCommand {
                 _ = try Account.verify(team: destination.team, in: tree, config: config, access: .read,
                                        deadline: deadline, window: view.window, warn: app.warn)
             }
+            let pane: VerifiedThread?
+            if let thread {
+                pane = try ThreadView.open(destination, rootTs: thread, in: tree, deadline: deadline, requireIdle: idle)
+            } else {
+                pane = nil
+            }
+            let scope = pane.map(MessageScope.thread) ?? .primary
             if history {
                 // Paging moves Slack's scroll position even when navigation was unnecessary.
-                try Environment.requireSlackIdle(interrupt: target.interrupt)
+                try idle()
                 let snapshot = try History.read(destination, in: tree, since: since,
                     bounds: PageBounds(maxItems: maxMessages ?? 200, maxPages: maxPages ?? 50, deadline: deadline),
-                    allowPartial: allowPartial)
-                return Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
-                              route: route, scope: "history", complete: snapshot.complete,
+                    allowPartial: allowPartial, scope: scope, requireIdle: idle)
+                if closeThread, let pane { try ThreadView.close(pane, in: tree, deadline: deadline, requireIdle: idle) }
+                return .actual(Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
+                              route: route, scope: thread == nil ? "history" : "rendered-thread",
+                              thread: thread, complete: snapshot.complete,
                               stopReason: snapshot.stopReason, pages: snapshot.pages,
                               oldestTs: snapshot.messages.first?.ts, newestTs: snapshot.messages.last?.ts,
                               scrollRestored: snapshot.scrollRestored, readAt: Date().ISO8601Format(),
-                              skippedItems: snapshot.skippedItems, messages: snapshot.messages)
+                              skippedItems: snapshot.skippedItems, messages: snapshot.messages))
             }
-            let webArea = try view.window.one(Locators.webArea)
+            let readView = try SlackWindow.verify(destination, in: tree)
+            let webArea = try readView.window.one(Locators.webArea)
             guard Date() < deadline else { throw RemoteError.timeout }
-            let (messages, skippedItems) = try MessageReader.read(view, limit: limit)
+            let (messages, skippedItems) = try MessageReader.read(readView, scope: scope, limit: limit)
 
             // Check the live URL of the web area we read, then verify a fresh window tree.
             let location = webArea.string(.url).map(ClientLocation.parse) ?? .notClient
@@ -97,11 +124,18 @@ struct Read: ParsableCommand {
                     throw RemoteError.destinationMismatch(expected: destination, actual: current.location)
                 }
             }
-            _ = try SlackWindow.verify(destination, in: tree)
+            if let pane {
+                _ = try ThreadView.verifyThread(destination, rootTs: pane.rootTs, in: tree)
+                if closeThread { try ThreadView.close(pane, in: tree, deadline: deadline, requireIdle: idle) }
+            } else {
+                _ = try SlackWindow.verify(destination, in: tree)
+            }
             guard Date() < deadline else { throw RemoteError.timeout }
 
-            return Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
-                          route: route, readAt: Date().ISO8601Format(), skippedItems: skippedItems, messages: messages)
+            return .actual(Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
+                          route: route, scope: thread == nil ? "rendered" : "rendered-thread",
+                          thread: thread, pages: thread == nil ? 0 : 1, readAt: Date().ISO8601Format(),
+                          skippedItems: skippedItems, messages: messages))
         }
     }
 }

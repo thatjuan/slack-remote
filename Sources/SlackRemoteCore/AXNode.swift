@@ -48,8 +48,15 @@ public final class AXNode: UINode {
     }
 
     public func bool(_ attribute: UIAttribute) -> Bool? {
-        guard let value = read(attribute), CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }
-        return value as? Bool
+        guard let value = read(attribute) else { return nil }
+        if CFGetTypeID(value) == CFBooleanGetTypeID() { return value as? Bool }
+        // Accessibility represents checkboxes as integer states in some clients.
+        guard attribute == .value, role == "AXCheckBox", let number = value as? NSNumber else { return nil }
+        switch number.doubleValue {
+        case 0: return false
+        case 1: return true
+        default: return nil
+        }
     }
 
     public func set(_ attribute: UIAttribute, to value: UIValue) throws {

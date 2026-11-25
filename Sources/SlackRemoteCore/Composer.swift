@@ -42,6 +42,7 @@ public struct Composer {
     }
 
     private let view: VerifiedView
+    let scope: MessageScope
     private let tree: SlackTree?
     private let methods: Methods
     private let requireIdle: () throws -> Void
@@ -50,12 +51,15 @@ public struct Composer {
         self.init(view: view, in: nil, methods: .live)
     }
 
-    public init(view: VerifiedView, in tree: SlackTree, requireIdle: @escaping () throws -> Void) {
-        self.init(view: view, in: tree, methods: .live, requireIdle: requireIdle)
+    public init(view: VerifiedView, scope: MessageScope = .primary, in tree: SlackTree,
+                requireIdle: @escaping () throws -> Void) {
+        self.init(view: view, scope: scope, in: tree, methods: .live, requireIdle: requireIdle)
     }
 
-    init(view: VerifiedView, in tree: SlackTree?, methods: Methods, requireIdle: @escaping () throws -> Void = {}) {
+    init(view: VerifiedView, scope: MessageScope = .primary, in tree: SlackTree?, methods: Methods,
+         requireIdle: @escaping () throws -> Void = {}) {
         self.view = view
+        self.scope = scope
         self.tree = tree
         self.methods = methods
         self.requireIdle = requireIdle
@@ -83,8 +87,9 @@ public struct Composer {
     }
 
     func controls(in view: VerifiedView) throws -> Controls {
-        try Controls(editor: view.primaryView.one(Locators.composerEditor),
-                     sendButton: view.primaryView.one(Locators.sendButton))
+        let node = try scope.node(in: view)
+        return try Controls(editor: node.one(Locators.composerEditor),
+                            sendButton: node.one(Locators.sendButton))
     }
 
     public func state() throws -> ComposerState {

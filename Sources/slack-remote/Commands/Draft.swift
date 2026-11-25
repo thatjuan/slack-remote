@@ -53,7 +53,7 @@ struct Draft: ParsableCommand {
         func validate() throws { try target.validate(requireDestination: true) }
 
         func run() throws {
-            try WriteCommand.run("draft clear", text: expectText, options: options, target: target,
+            try WriteCommand.run("draft clear", text: expectText, checkEmojiNames: false, options: options, target: target,
                                  preview: dryRun ? .draftClear(expectText) : nil) { view, tree, route, deadline in
                 let composer = Composer(view: view, in: tree, requireIdle: WriteCommand.idleCheck(target))
                 let cleared = try composer.clear(expecting: expectText, deadline: deadline)
@@ -85,8 +85,19 @@ enum WriteCommand {
     }
 
     static func run<Output: Encodable>(
-        _ command: String, text: String, allowBroadcast: Bool = false, options: CommandOptions,
+        _ command: String, text: String, allowBroadcast: Bool = false, checkEmojiNames: Bool = true,
+        options: CommandOptions, target: DestinationOptions, preview: DryRun.Operation?,
+        work: (VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
+    ) throws {
+        try run(command, options: options, target: target, preview: preview, validateInput: {
+            try MessageText.validate(text, allowBroadcast: allowBroadcast, checkEmojiNames: checkEmojiNames)
+        }, work: work)
+    }
+
+    static func run<Output: Encodable>(
+        _ command: String, options: CommandOptions,
         target: DestinationOptions, preview: DryRun.Operation?,
+        validateInput: () throws -> Void,
         work: (VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
     ) throws {
         typealias Outcome = Swift.Result<Previewable<Output>, any Error>
@@ -94,7 +105,7 @@ enum WriteCommand {
         var completedWork: Outcome?
         let outcome: Outcome
         do {
-            try MessageText.validate(text, allowBroadcast: allowBroadcast)
+            try validateInput()
             let (_, result) = try CommandSupport.withSession(options: options, prepare: {
                 let config = try Config.load()
                 let destination = try target.requireDestination(using: config)

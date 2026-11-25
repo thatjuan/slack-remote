@@ -3,7 +3,7 @@ import Foundation
 public enum Inspector {
     public enum Scope: String, CaseIterable { case window, primary, secondary, modal, sheet }
 
-    public static func describe(_ window: any UINode, scope: Scope, maxDepth: Int?) -> String {
+    public static func describe(_ window: any UINode, scope: Scope, maxDepth: Int?, emojiNames: Bool = false) -> String {
         let roots: [any UINode]
         switch scope {
         case .window: roots = [window]
@@ -22,6 +22,10 @@ public enum Inspector {
             if !node.actionNames.isEmpty { fields.append("actions=" + node.actionNames.joined(separator: ",")) }
             let settable = [UIAttribute.value, .focused, .selectedText].filter(node.isSettable)
             if !settable.isEmpty { fields.append("settable=" + settable.map(\.rawValue).joined(separator: ",")) }
+            if emojiNames, Locators.emojiImage.matches(node),
+               let name = MessageText.emojiName(from: node.string(.title)) {
+                fields.append("title=:\(name):")
+            }
             lines.append(String(repeating: "  ", count: depth) + fields.joined(separator: " "))
             if canDescend(node), maxDepth.map({ depth < $0 }) ?? true {
                 pending.append(contentsOf: node.children.reversed().map { ($0, depth + 1) })
