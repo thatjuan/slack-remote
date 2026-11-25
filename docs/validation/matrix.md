@@ -1,12 +1,12 @@
 # v1.0 release validation
 
-Main-mac ran stock Slack 4.53.292 on macOS 27.2.1 with Swift 6.4.2. The first matrix ran on 2026-11-24. The 2026-11-25 follow-up used the installed 1.0.0 CLI from integration commit `bf6755d44187b84e4d0d697b2f19b0a741e6832e`. Rows outside the follow-up retain the first matrix evidence at `e605584b1c516817d9d643d5b26ab8de112af534`.
+Main-mac ran stock Slack 4.53.292 on macOS 27.2.1 with Swift 6.4.2. The first matrix ran on 2026-11-24. The 2026-11-25 follow-ups used the installed 1.0.0 CLI from `bf6755d44187b84e4d0d697b2f19b0a741e6832e` and retested directory restoration on `b1d5c9f2147fda5b6242899efaa7ca74035cdc2b`. Rows outside the follow-ups retain the first matrix evidence at `e605584b1c516817d9d643d5b26ab8de112af534`.
 
 The runs used a mode-`0600` test configuration and the shared project lock. Setup ran `doctor`, `whoami --save` and `dest add` for notes and self with `restrictWritesToDestinations` enabled. All content changes used generated fixtures in notes. The follow-up left the self attachment preview and draft state untouched. The send preview returned `12 / ui_blocked` before it could verify an empty composer. [Self-DM recovery](v1-foundation.md#self-dm-recovery)
 
 | # | Area | Command or action | Expected | Outcome | Note |
 |---|---|---|---|---|---|
-| 1 | Build | `swift test` | all tests pass | pass | The integrated release build, 162 Swift Testing tests, 15 XCTest tests and `git diff --check` passed. |
+| 1 | Build | `swift test` | all tests pass | pass | The final integrated release build, 162 Swift Testing tests, 18 XCTest tests and `git diff --check` passed. |
 | 2 | Install | `scripts/install.sh`, `slack-remote --version` | `1.0.0` | pass | Installed to an isolated prefix and to the default prefix under a disposable home. Both printed `1.0.0`. Reinstall succeeded, unrelated and symlink targets were refused, and uninstall preserved both local data directories. |
 | 3 | Environment | `doctor` | every check passes | pass | The installed CLI passed all eight checks. |
 | 4 | Environment | `doctor` from an ssh shell | exit 10 | pass | The SSH invocation exited `10` with `accessibility_not_trusted`. |
@@ -46,15 +46,15 @@ The runs used a mode-`0600` test configuration and the shared project lock. Setu
 | 38 | Upload | `upload --dest notes --thread <ts> --file <test file> --text …` | file and text in the thread only | pass | The confirmed receipt matched one attachment and caption in the notes thread. The primary message list did not contain that receipt. Staging was removed. |
 | 39 | Upload | zero-byte file, directory, missing path | exit 15, `file_rejected` | pass | The zero-byte file, directory and missing path each returned `15 / file_rejected`. |
 | 40 | Upload | `upload` with a test draft present | exit 15, draft unchanged | pass | Upload returned `15 / draft_conflict`. Exact-match clear verified the generated draft was preserved. |
-| 41 | Leftovers | after the run: `doctor`, `inspect --scope window` | no popup, no sheet, no thread pane left by the run, tree off | pass | Doctor and window inspect passed. The next doctor enabled the tree afresh. Verified notes with no blocking popup, sheet, secondary pane or recovery marker. |
-| 42 | Scripting | `scripts/check-json.sh` and the worked example in `docs/scripting.md` | valid JSON throughout, example completes | pass | Every JSON check passed with the installed CLI. The worked example ran as written and returned a confirmed reply whose receipt matched one rendered thread message. |
+| 41 | Leftovers | after the run: `doctor`, `inspect --scope window` | no popup, no sheet, no thread pane left by the run, tree off | pass | Window inspection passed on the first run. After the directory retest, scoped inspections confirmed verified notes with no modal, sheet or secondary pane. Doctor enabled the tree anew and left no recovery marker. |
+| 42 | Scripting | `scripts/check-json.sh` and the worked example in `docs/scripting.md` | valid JSON throughout, example completes | pass | The full JSON checker passed again with the directory fix installed. The earlier worked example ran as written and returned a confirmed reply whose receipt matched one rendered thread message. |
 | 43 | Package | `scripts/package.sh`, unzip elsewhere, run `doctor` from the unzipped binary | zip and checksum produced, binary runs | pass | The archive checksum and both signatures verified. The arm64 slice extracted to an isolated directory passed all eight doctor checks. |
 
 ## Follow-up checks
 
 - Live search exited 130 with empty stdout and no JSON error when sent SIGINT at each trace, `Search modal opened` and `Search results ready`. After each signal, all eight doctor checks passed and independent inspections confirmed notes with no modal, sheet or secondary pane. [Search regression retest](search.md#release-regression-retest)
 - Workspace People returned one labeled row for the account-derived query and restored notes. The directory label comparison could not establish that row’s identity. The earlier positive fixture returned `user: null` because Slack exposed a display label alone. [Workspace People evidence](search.md#release-regression-retest)
-- A later one-page People directory run returned notes with the earlier scoped search pane reopened. A locked check closed only the owned pane through its header. If the pane is open, a subsequent search returns `ui_blocked` until it is closed. [People command limits](../commands/people.md)
+- The earlier build could reopen a scoped search pane on directory return. With the fix installed, scoped Messages returned five identified synthetic hits, one-page People returned five entries, and the next in-place read returned seven ordered messages in verified notes. Independent inspection found zero secondary panes, modals or sheets. [Directory return regression](search.md#directory-return)
 - The five-snapshot notes history run returned 17 ordered, unique messages with `limit`, `complete: false` and `scrollRestored: true`. A separate rendered read confirmed the starting message was visible again. Exact viewport coordinates were unmeasured. The history follow-up also restored the starting message after four and five snapshots. [History anchor recovery](read.md#history-anchor-recovery)
 - The notes search exposed one results snapshot. The available synthetic fixtures did not exercise a second search page.
 

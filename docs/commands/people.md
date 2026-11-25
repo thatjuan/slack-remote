@@ -6,7 +6,7 @@ Lists users from the People tab of Slack’s directory and returns to the starti
 
 If **Go › People & User Groups** leaves the view unchanged, the command opens the directory through **Add channels › Browse channels** in an English Slack client and selects the People tab.
 
-Slack can reopen a previous scoped search pane when the directory returns to the starting conversation. If the next search returns `ui_blocked`, close that pane in Slack and retry.
+Slack can reopen a scoped search pane during the return to the starting conversation. The command closes it when the window, conversation and account checks identify it as reopened by that return. Panes already open when the directory command starts stay open. If clean return cannot be verified, the command can report `overlay_left_open`.
 
 `--max-items` defaults to 500 and accepts up to 5,000. `--max-pages` defaults to 100. The result includes `complete`, `stopReason`, `pages`, and `expectedCount`. The observed grid has no reliable count or end marker, so `expectedCount` is `null` and a full traversal can finish with a partial result.
 
