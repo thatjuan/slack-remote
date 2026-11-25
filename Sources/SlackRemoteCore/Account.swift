@@ -88,15 +88,14 @@ public struct Account: Codable, Equatable {
     }
 
     public static func sidebarSelfDM(in window: any UINode) throws -> ConversationID? {
-        let rows = window.all(Locators.sidebarRow).filter { row in
-            row.domClasses.contains(Locators.selfDM)
+        let ids = Set(window.all(Locators.sidebarRow).compactMap { row -> ConversationID? in
+            // Slack also renders sidebar shortcuts with non-conversation DOM IDs.
+            guard let raw = row.domID, let id = ConversationID(raw), id.kind == .directMessage else { return nil }
+            let marked = row.domClasses.contains(Locators.selfDM)
                 || row.descendants().contains { $0.domClasses.contains(Locators.selfDM) }
-        }
-        if rows.isEmpty { return nil }
-        guard rows.count == 1, let raw = rows.first?.domID,
-              let id = ConversationID(raw), id.kind == .directMessage else {
-            throw RemoteError.accountUnverified
-        }
-        return id
+            return marked ? id : nil
+        })
+        guard ids.count <= 1 else { throw RemoteError.accountUnverified }
+        return ids.first
     }
 }

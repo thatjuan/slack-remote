@@ -48,4 +48,20 @@ struct OverlaysTests {
         #expect(error?.code == "overlay_left_open")
         #expect(overlay.performCalls == [.press])
     }
+
+    @Test func closesModalWhenOpeningReportedAnErrorAfterPress() throws {
+        let fixture = try ComposerFixture()
+        let primary = fixture.webArea.children
+        let overlay = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
+        let modal = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent])
+        overlay.onPerform = { _ in fixture.webArea.children = primary }
+        #expect(throws: BodyError.expected) {
+            try Overlays.withModal(in: fixture.tree, deadline: Date().addingTimeInterval(1), opening: {
+                fixture.webArea.children = [overlay, modal]
+                throw BodyError.expected
+            }) { _ in Issue.record("A failed opening must never enter the modal body") }
+        }
+        #expect(overlay.performCalls == [.press])
+        #expect(Overlays.open(in: fixture.tree).isEmpty)
+    }
 }

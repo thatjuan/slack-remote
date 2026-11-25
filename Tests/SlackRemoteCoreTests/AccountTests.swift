@@ -56,6 +56,13 @@ struct AccountTests {
         #expect(error?.code == "account_mismatch")
     }
 
+    @Test func identifiesTheSelfDMConversationAlongsideAShortcut() throws {
+        let window = SlackFixture.window(sidebar: ["C0BBBBBBB", selfDM.rawValue, "self-dm-shortcut"])
+        let rows = window.all(Locators.sidebarRowTarget).compactMap { $0 as? FakeNode }
+        for row in rows.suffix(2) { row.domClasses.append(Locators.selfDM) }
+        #expect(try Account.sidebarSelfDM(in: window) == selfDM)
+    }
+
     @Test func whenSidebarRowIsMissingOnlyWritesCheckSearchModal() throws {
         let fixture = try ComposerFixture()
         let button = FakeNode(role: "AXButton", domClasses: Locators.searchButton.classes)

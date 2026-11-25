@@ -17,18 +17,22 @@ public enum Overlays {
         do {
             try tree.refresh()
             let window = try SlackWindow.currentWindow(in: tree).window
-            if open(in: tree).contains(.modal) {
+            let overlays = open(in: tree)
+            if overlays == [.modal], window.descendants().contains(where: { kind($0) == .modal }) {
                 let backdrop = try window.one(Locators.modalOverlay)
                 // AX can report an error for a press that Slack already handled.
                 try? backdrop.perform(.press)
+            } else if !overlays.isEmpty {
+                throw RemoteError.overlayLeftOpen
             }
 
-            let closed: Bool? = try Poll.until(deadline) {
+            func primaryRestored() throws -> Bool {
                 try tree.refresh()
                 let current = try SlackWindow.currentWindow(in: tree)
-                return !open(in: tree).contains(.modal) && current.window.all(Locators.primaryView).count == 1
-                    ? true : nil
+                return open(in: tree).isEmpty && current.window.all(Locators.primaryView).count == 1
             }
+            if try primaryRestored() { return }
+            let closed: Bool? = try Poll.until(deadline) { try primaryRestored() ? true : nil }
             guard closed == true else { throw RemoteError.overlayLeftOpen }
         } catch {
             throw RemoteError.overlayLeftOpen
@@ -41,6 +45,7 @@ public enum Overlays {
                                     _ body: (any UINode) throws -> T) throws -> T {
         try tree.refresh()
         try requireUnblocked(in: tree)
+        var observedModal = false
         let result = Result {
             try opening()
             let modal: (any UINode)? = try Poll.until(deadline) {
@@ -50,6 +55,7 @@ public enum Overlays {
                 return open(in: tree) == [.modal] ? modals.first : nil
             }
             guard let modal else { throw RemoteError.timeout }
+            observedModal = true
             return try body(modal)
         }
 
@@ -58,10 +64,7 @@ public enum Overlays {
         } catch {
             throw RemoteError.overlayLeftOpen
         }
-        if open(in: tree).contains(.modal) {
-            try closeModal(in: tree, deadline: deadline)
-        } else if case .success = result {
-            // The body may have dismissed the modal itself. Still check the view.
+        if observedModal || !open(in: tree).isEmpty {
             try closeModal(in: tree, deadline: deadline)
         }
         return try result.get()

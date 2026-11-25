@@ -68,7 +68,6 @@ struct Read: ParsableCommand {
                 _ = try Account.verify(team: destination.team, in: tree, config: config, access: .read,
                                        deadline: deadline, window: view.window, warn: app.warn)
             }
-            let readAt = Date().ISO8601Format()
             if history {
                 // Paging moves Slack's scroll position even when navigation was unnecessary.
                 try Environment.requireSlackIdle(interrupt: target.interrupt)
@@ -79,7 +78,7 @@ struct Read: ParsableCommand {
                               route: route, scope: "history", complete: snapshot.complete,
                               stopReason: snapshot.stopReason, pages: snapshot.pages,
                               oldestTs: snapshot.messages.first?.ts, newestTs: snapshot.messages.last?.ts,
-                              scrollRestored: snapshot.scrollRestored, readAt: readAt,
+                              scrollRestored: snapshot.scrollRestored, readAt: Date().ISO8601Format(),
                               skippedItems: snapshot.skippedItems, messages: snapshot.messages)
             }
             let webArea = try view.window.one(Locators.webArea)
@@ -102,7 +101,7 @@ struct Read: ParsableCommand {
             guard Date() < deadline else { throw RemoteError.timeout }
 
             return Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
-                          route: route, readAt: readAt, skippedItems: skippedItems, messages: messages)
+                          route: route, readAt: Date().ISO8601Format(), skippedItems: skippedItems, messages: messages)
         }
     }
 }
