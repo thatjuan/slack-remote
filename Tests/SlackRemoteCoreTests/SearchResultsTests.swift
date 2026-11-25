@@ -58,16 +58,24 @@ struct SearchResultsTests {
     @Test func workspacePeopleSearchReadsTheSelectedSource() throws {
         let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
         let sources = fixture.showSources()
-        let snapshot = try fixture.read(type: "people")
+        let snapshot = try fixture.read(type: "people", timeout: 4)
         #expect(snapshot.results.map(\.content) == [.person(UserID("U0EEEEEEE"), label: "Ada")])
         #expect(sources.performCalls == [.press, .press])
+    }
+
+    @Test func workspacePeopleSearchReadsTheGridWithoutColumnDuplicates() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        fixture.showSources(peopleGrid: true)
+        let snapshot = try fixture.read(type: "people", timeout: 4)
+        #expect(snapshot.results.map(\.content) == [.person(nil, label: "Ada")])
+        #expect(snapshot.complete)
     }
 
     @Test func scopedFilesKeepTheirFilterAndStructuredResults() throws {
         let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
         let sources = fixture.showSources(withBackdrop: false, ignoreFirstDismissal: true)
         fixture.showConversationFilter()
-        let snapshot = try fixture.read(type: "files", conversation: Fixture.result.conversation)
+        let snapshot = try fixture.read(type: "files", timeout: 4, conversation: Fixture.result.conversation)
         #expect(snapshot.results.map(\.content) == [.file("F0DDDDDDD", name: "fixture.txt", conversation: nil)])
         #expect(sources.performCalls == [.press, .press, .press, .press])
         #expect(Overlays.open(in: fixture.tree).isEmpty)

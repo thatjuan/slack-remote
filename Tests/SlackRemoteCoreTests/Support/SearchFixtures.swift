@@ -215,7 +215,8 @@ final class SearchResultsFixture {
     }
 
     @discardableResult
-    func showSources(withBackdrop: Bool = true, ignoreFirstDismissal: Bool = false) -> FakeNode {
+    func showSources(withBackdrop: Bool = true, ignoreFirstDismissal: Bool = false,
+                     peopleGrid: Bool = false) -> FakeNode {
         root.children.removeAll { Locators.searchTab.matches($0) }
         let sources = FakeNode(role: "AXPopUpButton", domID: "search-filters-sources-filter")
         let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
@@ -254,7 +255,22 @@ final class SearchResultsFixture {
                 }
                 if index == 2 { list.children = [Self.row(id: "F0DDDDDDD", name: "fixture.txt")] }
                 if index == 3 {
-                    list.children = [Self.row(id: "U0EEEEEEE", name: "Ada")]
+                    if peopleGrid {
+                        let name = FakeNode(role: "AXButton", domClasses: Locators.searchPersonName.classes,
+                                            children: [FakeNode(role: "AXStaticText", attributes: [.value: .string("Ada")])])
+                        let cell = FakeNode(role: "AXCell", domClasses: Locators.searchPersonCell.classes,
+                                            children: [name])
+                        let empty = FakeNode(role: "AXCell", domClasses: Locators.searchPersonCell.classes)
+                        list.role = "AXTable"
+                        list.subrole = nil
+                        list.domClasses = Locators.searchPeopleGrid.classes
+                        list.children = [
+                            FakeNode(role: "AXColumn", children: [cell]),
+                            FakeNode(role: "AXRow", domClasses: Locators.searchPeopleRow.classes, children: [cell, empty]),
+                        ]
+                    } else {
+                        list.children = [Self.row(id: "U0EEEEEEE", name: "Ada")]
+                    }
                     root.children.removeAll { $0.domID == "filter-in" }
                 }
                 web.children.removeAll { $0 as AnyObject === surface }
