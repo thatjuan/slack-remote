@@ -20,13 +20,25 @@ public enum ThreadView {
 
     static func verify(rootTs: String, in view: VerifiedView) throws -> VerifiedThread {
         let pane = try view.window.one(Locators.secondaryView)
+        let thread = try identify(pane, destination: view.destination)
+        guard thread.rootTs == rootTs else { throw RemoteError.uiDrift(locator: "threadIdentity", found: 0) }
+        return thread
+    }
+
+    private static func identify(_ pane: any UINode, destination: Destination) throws -> VerifiedThread {
         let list = try pane.one(Locators.threadList)
         let rows = list.children.filter { Locators.virtualItem.matches($0) }
-        let prefix = VerifiedThread.itemPrefix(view.destination, rootTs: rootTs)
-        guard rows.allSatisfy({ $0.domID?.hasPrefix(prefix) == true }),
+        let conversation = destination.conversation.rawValue + "-"
+        guard let firstID = rows.first?.domID, firstID.hasPrefix(conversation),
+              let split = firstID.range(of: Locators.threadItemMarker) else {
+            throw RemoteError.uiDrift(locator: "threadIdentity", found: rows.count)
+        }
+        let rootTs = String(firstID[..<split.lowerBound].dropFirst(conversation.count))
+        let prefix = VerifiedThread.itemPrefix(destination, rootTs: rootTs)
+        guard MessageReader.isTimestamp(rootTs), rows.allSatisfy({ $0.domID?.hasPrefix(prefix) == true }),
               rows.contains(where: { $0.domID.map { MessageReader.isTimestamp(String($0.dropFirst(prefix.count))) } == true })
         else { throw RemoteError.uiDrift(locator: "threadIdentity", found: rows.count) }
-        return VerifiedThread(destination: view.destination, rootTs: rootTs, pane: pane)
+        return VerifiedThread(destination: destination, rootTs: rootTs, pane: pane)
     }
 
     public static func open(_ destination: Destination, rootTs: String, in tree: SlackTree, deadline: Date,
@@ -36,9 +48,8 @@ public enum ThreadView {
         let panes = view.window.all(Locators.secondaryView)
         if !panes.isEmpty {
             let pane = try view.window.one(Locators.secondaryView)
-            if let thread = try? verify(rootTs: rootTs, in: view) { return thread }
-            // Only close a pane that Slack identifies as a thread.
-            _ = try pane.one(Locators.threadList)
+            let existing = try identify(pane, destination: destination)
+            if existing.rootTs == rootTs { return existing }
             try close(pane, in: view, tree: tree, deadline: deadline, requireIdle: requireIdle)
             view = try SlackWindow.verify(destination, in: tree)
         }

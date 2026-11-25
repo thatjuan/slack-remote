@@ -5,6 +5,9 @@ import Testing
 struct DryRunTests {
     @Test(arguments: [
         DryRun.Operation.open, .draftSet("synthetic"), .draftClear("synthetic"), .send("synthetic"),
+        .readThread(rootTs: ThreadFixture.root, history: true, close: true),
+        .reply(rootTs: ThreadFixture.root, text: "synthetic", broadcast: false),
+        .react(ts: ThreadFixture.reply, thread: ThreadFixture.root),
     ])
     func previewsEachOperationWithoutAXMutations(_ operation: DryRun.Operation) throws {
         let fixture = try ComposerFixture()
@@ -46,5 +49,21 @@ struct DryRunTests {
         }
         #expect(error?.code == "write_unverified")
         #expect(fixture.send.performCalls.isEmpty)
+    }
+
+    @Test func replyPreviewOnlyInspectsTheRequestedThreadDraft() throws {
+        let fixture = try ThreadFixture()
+        fixture.primary.show(.text("outside thread"))
+        let operation = DryRun.Operation.reply(rootTs: ThreadFixture.root, text: "synthetic", broadcast: false)
+        func preview() throws -> DryRun {
+            try DryRun.preview(operation, destination: fixture.primary.view.destination, user: nil,
+                preference: .auto, config: nil, in: fixture.primary.tree, deadline: .distantFuture)
+        }
+        #expect(try preview().composer == .empty)
+        fixture.threadComposer.show(.text("different"))
+        let error = #expect(throws: RemoteError.self) { try preview() }
+        #expect(error?.code == "draft_conflict")
+        #expect(fixture.threadComposer.editor.setCalls.isEmpty)
+        #expect(fixture.threadComposer.send.performCalls.isEmpty)
     }
 }

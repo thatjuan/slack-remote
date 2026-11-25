@@ -104,12 +104,13 @@ public enum Reactions {
     }
 
     private static func reactions(in item: any UINode) -> [(name: String?, reacted: Bool)] {
-        item.all(Locators.reactionBar).flatMap { bar in
-            bar.all(Locators.reactionCheckbox).map { reaction in
-                let images = reaction.all(Locators.emojiImage)
-                let name = images.count == 1 ? MessageText.emojiName(from: images.first?.string(.title)) : nil
-                return (name, reaction.domClasses.contains(Locators.reactionReacted))
-            }
+        item.descendants().compactMap { reaction in
+            let reacted = reaction.domClasses.contains(Locators.reactionReacted)
+            // A reacted marker on an unexpected role still means a press could remove a reaction.
+            guard Locators.reactionCheckbox.matches(reaction) else { return reacted ? (nil, true) : nil }
+            let images = reaction.all(Locators.emojiImage)
+            let name = images.count == 1 ? MessageText.emojiName(from: images.first?.string(.title)) : nil
+            return (name, reacted)
         }
     }
 

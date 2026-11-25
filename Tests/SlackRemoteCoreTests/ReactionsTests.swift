@@ -11,7 +11,7 @@ struct ReactionsTests {
         let picker = FakeNode(role: "AXGroup", domClasses: Locators.emojiPicker.classes)
         let search = FakeNode(role: "AXTextField", domClasses: Locators.emojiSearch.classes)
         let add = FakeNode(role: "AXMenuItem", domClasses: Locators.addReaction.classes)
-        let reactionBar = FakeNode(role: "AXGroup", domClasses: Locators.reactionBar.classes)
+        let reactionBar = FakeNode(role: "AXGroup", domClasses: ["c-reaction_bar"])
 
         init() throws {
             core = try ComposerFixture()
@@ -62,6 +62,14 @@ struct ReactionsTests {
         let error = #expect(throws: RemoteError.self) { try fixture.run() }
         #expect(error?.code == "ui_drift")
         #expect(error?.message.contains("cannot tell which emoji") == true)
+        #expect(fixture.item.performCalls.isEmpty)
+    }
+
+    @Test func anUnexpectedReactedControlStillBlocksThePicker() throws {
+        let fixture = try Fixture()
+        fixture.reactionBar.children = [FakeNode(role: "AXButton", domClasses: [Locators.reactionReacted])]
+        let error = #expect(throws: RemoteError.self) { try fixture.run() }
+        #expect(error?.code == "ui_drift")
         #expect(fixture.item.performCalls.isEmpty)
     }
 

@@ -27,6 +27,18 @@ struct ThreadViewTests {
         #expect(throws: RemoteError.self) { try fixture.verify() }
     }
 
+    @Test func willNotCloseAPaneWithAnUnverifiedThreadIdentity() throws {
+        let fixture = try ThreadFixture()
+        let row = try #require(fixture.list.children.first as? FakeNode)
+        row.domID = "D0CCCCCCC-\(ThreadFixture.root)-thread-list-Thread_\(ThreadFixture.root)"
+        let error = #expect(throws: RemoteError.self) {
+            try ThreadView.open(fixture.primary.view.destination, rootTs: ThreadFixture.otherRoot,
+                in: fixture.primary.tree, deadline: Date().addingTimeInterval(2), requireIdle: {})
+        }
+        #expect(error?.code == "ui_drift")
+        #expect(fixture.close.performCalls.isEmpty)
+    }
+
     @Test func opensADifferentThreadViaItsExactMenu() throws {
         let fixture = try ThreadFixture()
         let other = try ThreadFixture(root: ThreadFixture.otherRoot)
