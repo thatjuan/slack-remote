@@ -34,6 +34,33 @@ The result's `scope: "rendered"` means Slack's message list supplies only what i
 .build/release/slack-remote read --limit 5
 ```
 
+### `draft`
+
+`draft set` puts text in an empty composer and stops there. If the composer already holds the same text, the command succeeds with `method: "existing"`. A different draft or a pending attachment returns `draft_conflict`.
+
+`draft clear` removes a draft that matches `--expect-text`. An empty composer succeeds with `cleared: false`. Draft comparisons use Unicode NFC, convert CRLF to LF, and ignore one trailing newline.
+
+```sh
+.build/release/slack-remote draft set --team T0AAAAAAA --channel C0BBBBBBB --text 'Ready for review'
+.build/release/slack-remote draft clear --team T0AAAAAAA --channel C0BBBBBBB --expect-text 'Ready for review'
+```
+
+### `send`
+
+`send` writes the message or reuses an identical draft. It rechecks the destination, composer, and send button before pressing once. A successful result includes the timestamp of the newer matching message that Slack rendered.
+
+```sh
+.build/release/slack-remote send --team T0AAAAAAA --channel C0BBBBBBB --text 'Ready for review'
+```
+
+All three commands require `--team` and `--channel` and accept `--user` for DM navigation. They refuse to proceed while Slack is frontmost and has received input within the last 30 seconds unless you pass `--interrupt`.
+
+The CLI checks text before opening a Slack session. It refuses blank text, text over 4,000 characters, control characters other than newline and tab, a leading `/` after whitespace, and standalone reaction shortcuts such as `+:tada:`. It also refuses `@channel`, `@here`, and `@everyone` in any case. `send --allow-broadcast` permits those mentions.
+
+If a failure reports `draftLeft: true` before the press, rerun `send` with the same text to resume an identical draft, or clear it with `draft clear --expect-text`. If Slack changed the text or the draft contains a broadcast mention, inspect and clear it in Slack. An error without `draftLeft` may mean the CLI could no longer verify the conversation.
+
+`send_unconfirmed` means Slack may have sent the message. Use `read` or check the conversation in Slack before retrying. Each invocation makes at most one press.
+
 ## Exit statuses
 
 | Status | Meaning |
