@@ -71,12 +71,13 @@ struct SenderTests {
         #expect(fixture.send.performCalls.isEmpty)
     }
 
-    @Test func unchangedComposerReportsSendNotPerformed() throws {
+    @Test func unchangedComposerAfterPressReportsSendUnconfirmed() throws {
         let fixture = try fixture()
-        let error = #expect(throws: RemoteError.self) {
+        let error = #expect(throws: WriteFailure.self) {
             try fixture.sender().send(text, deadline: Date().addingTimeInterval(0.2))
         }
-        #expect(error?.code == "send_not_performed")
+        #expect(error?.error.code == "send_unconfirmed")
+        #expect(error?.draftLeft == true)
         #expect(fixture.send.performCalls == [.press])
     }
 

@@ -39,8 +39,8 @@ public struct Sender {
             throw composer.observedFailure(error)
         }
 
-        // An AX error does not establish whether Slack handled the press.
-        let pressAcknowledged = (try? button.perform(.press)) != nil
+        // The AX result alone cannot establish whether Slack sent the message.
+        try? button.perform(.press)
         let expectedMessage = MessageText.collapse(text)
         do {
             let ts = try Poll.until(deadline) {
@@ -61,12 +61,7 @@ public struct Sender {
             throw composer.observedFailure(RemoteError.sendUnconfirmed)
         }
 
-        // Re-observe at the deadline so a previous poll cannot certify a stale draft.
-        let lastState = try? composer.state()
-        if pressAcknowledged, lastState == expected {
-            throw RemoteError.sendNotPerformed(draftLeft: true)
-        }
-        throw WriteFailure(RemoteError.sendUnconfirmed, draftLeft: lastState.map { $0 != .empty })
+        throw composer.observedFailure(RemoteError.sendUnconfirmed)
     }
 
     private static func isNewer(_ ts: String, than previous: String?) -> Bool {

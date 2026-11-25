@@ -20,7 +20,6 @@ public enum RemoteError: Error {
     case draftConflict(existingLength: Int)
     case writeFailed(draftLeft: Bool)
     case writeUnverified(draftLeft: Bool)
-    case sendNotPerformed(draftLeft: Bool)
     case sendUnconfirmed
     case timeout
 
@@ -47,7 +46,6 @@ public enum RemoteError: Error {
         case .draftConflict: return "draft_conflict"
         case .writeFailed: return "write_failed"
         case .writeUnverified: return "write_unverified"
-        case .sendNotPerformed: return "send_not_performed"
         case .sendUnconfirmed: return "send_unconfirmed"
         case .timeout: return "timeout"
         }
@@ -62,7 +60,7 @@ public enum RemoteError: Error {
         case .destinationMismatch, .destinationUnreachable: return 13
         case .slackInUse, .busy: return 14
         case .unsafeText, .draftConflict: return 15
-        case .writeFailed, .writeUnverified, .sendNotPerformed: return 16
+        case .writeFailed, .writeUnverified: return 16
         case .sendUnconfirmed: return 17
         case .timeout: return 18
         }
@@ -93,7 +91,6 @@ public enum RemoteError: Error {
         case .draftConflict: return "The composer already contains different content."
         case .writeFailed: return "Slack did not apply the requested composer change."
         case .writeUnverified: return "Slack's composer change could not be verified."
-        case .sendNotPerformed: return "Slack did not complete the send."
         case .sendUnconfirmed: return "The message may have been sent. Check the conversation before retrying."
         case .timeout: return "The command deadline passed."
         }
@@ -127,7 +124,7 @@ public enum RemoteError: Error {
             ]
         case .unsafeText(let reason): return ["reason": .string(reason)]
         case .draftConflict(let existingLength): return ["existingLength": .integer(existingLength)]
-        case .writeFailed(let draftLeft), .writeUnverified(let draftLeft), .sendNotPerformed(let draftLeft):
+        case .writeFailed(let draftLeft), .writeUnverified(let draftLeft):
             return ["draftLeft": .boolean(draftLeft)]
         default: return nil
         }
