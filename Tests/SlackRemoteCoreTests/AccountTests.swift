@@ -1,5 +1,5 @@
 import Foundation
-import SlackRemoteCore
+@testable import SlackRemoteCore
 import Testing
 
 @MainActor
@@ -71,8 +71,7 @@ struct AccountTests {
         let filter = FakeNode(role: "AXCheckBox", domID: Locators.selfFilterPrefix + user.rawValue)
         let clear = FakeNode(role: "AXButton", domClasses: Locators.searchClear.classes)
         let modal = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], children: [filter, clear])
-        let overlay = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes + ["c-search_modal"],
-                               children: [modal])
+        let overlay = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes, children: [modal])
         let coachmark = FakeNode(role: "AXGroup", subrole: "AXApplicationDialog", domClasses: [Locators.modalContent])
         let coachmarkBackdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes,
                                          children: [coachmark])
@@ -104,5 +103,39 @@ struct AccountTests {
         }
         #expect(error?.code == "account_mismatch")
         #expect(Overlays.open(in: fixture.tree).isEmpty)
+    }
+
+    @Test func rebuildsOwnedAccessibilityWhenSearchDoesNotExposeItsBackdrop() throws {
+        let fixture = try ComposerFixture()
+        let button = FakeNode(role: "AXButton", domClasses: Locators.searchButton.classes)
+        fixture.webArea.children.append(button)
+        let primary = fixture.webArea.children
+        let filter = FakeNode(role: "AXCheckBox", domID: Locators.selfFilterPrefix + user.rawValue)
+        let modal = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], children: [filter])
+        let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes, children: [modal])
+        button.onPerform = { _ in fixture.webArea.children = [modal] }
+        backdrop.onPerform = { _ in fixture.webArea.children = primary }
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let marker = directory.appendingPathComponent("ax-enabled-12345")
+        var modeChanges: [Bool] = []
+        let app = SlackApp(identity: ProcessIdentity(pid: 12345, launchDate: .distantPast), supportDirectory: directory,
+                           readWindows: { modeChanges.last == true ? [fixture.window] : [] },
+                           setMode: { enabled in
+            #expect(FileManager.default.fileExists(atPath: marker.path))
+            modeChanges.append(enabled)
+            if modeChanges == [true, false, true] { fixture.webArea.children = [backdrop] }
+        })
+        let deadline = Date().addingTimeInterval(4)
+        let observed = try app.withTree(deadline: deadline) { tree in
+            try Account.identify(in: tree, deadline: deadline)
+        }
+        #expect(observed.user == user)
+        #expect(modeChanges == [true, false, true, false])
+        #expect(button.performCalls == [.press])
+        #expect(backdrop.performCalls == [.press])
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
     }
 }
