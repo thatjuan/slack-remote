@@ -1,0 +1,56 @@
+public struct Locator {
+    public let name: String
+    public let role: String
+    public var subrole: String?
+    public var classes: [String]
+    public var idPrefix: String?
+
+    public init(name: String, role: String, subrole: String? = nil,
+                classes: [String] = [], idPrefix: String? = nil) {
+        self.name = name
+        self.role = role
+        self.subrole = subrole
+        self.classes = classes
+        self.idPrefix = idPrefix
+    }
+
+    public func matches(_ node: any UINode) -> Bool {
+        node.role == role
+            && (subrole == nil || node.subrole == subrole)
+            && classes.allSatisfy(node.domClasses.contains)
+            && (idPrefix.map { node.domID?.hasPrefix($0) == true } ?? true)
+    }
+}
+
+public enum Locators {
+    // Shell
+    public static let webArea = Locator(name: "webArea", role: "AXWebArea")
+    public static let sidebarRow = Locator(name: "sidebarRow", role: "AXRow", subrole: "AXOutlineRow",
+                                           classes: ["p-channel_sidebar__static_list__item"])
+    public static let primaryView = Locator(name: "primaryView", role: "AXGroup",
+                                             classes: ["p-view_contents--primary"])
+    public static let sidebarRowSelected = "p-channel_sidebar__static_list__item--selected"
+    public static let sidebarDraft = "p-channel_sidebar__channel--draft"
+
+    // Messages
+    public static let messageList = Locator(name: "messageList", role: "AXList", subrole: "AXContentList")
+    public static let messageItem = Locator(name: "messageItem", role: "AXGroup",
+                                             classes: ["c-virtual_list__item"], idPrefix: "message-list_")
+    public static let messageBody = Locator(name: "messageBody", role: "AXGroup", subrole: "AXDocument",
+                                             classes: ["c-message_kit__hover"])
+    public static let senderButton = Locator(name: "senderButton", role: "AXButton",
+                                              classes: ["c-message__sender_button"])
+    public static let richTextSection = Locator(name: "richTextSection", role: "AXGroup",
+                                                 classes: ["p-rich_text_section"])
+    public static let reaction = Locator(name: "reaction", role: "AXCheckBox", subrole: "AXToggleButton",
+                                          classes: ["c-reaction"])
+    public static let reactionReacted = "c-reaction--reacted"
+    public static let attachmentPrefix = "c-message_attachment"
+
+    // Composer
+    public static let composerEditor = Locator(name: "composerEditor", role: "AXTextArea", classes: ["ql-editor"])
+    public static let sendButton = Locator(name: "sendButton", role: "AXButton",
+                                            classes: ["c-wysiwyg_container__button--send"])
+    public static let composerBlank = "ql-blank"
+    public static let buttonDisabled = "c-button--disabled"
+}
