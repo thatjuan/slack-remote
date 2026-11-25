@@ -9,6 +9,7 @@ final class FakeNode: UINode {
     var attributes: [UIAttribute: UIValue]
     var actionNames: [String] = []
     var settableAttributes: Set<UIAttribute> = []
+    var nodeAttributes: [UIAttribute: FakeNode] = [:]
     var onSet: ((UIAttribute, UIValue) throws -> Void)?
     var onPerform: ((UIAction) throws -> Void)?
 
@@ -40,6 +41,10 @@ final class FakeNode: UINode {
 
     func isSettable(_ attribute: UIAttribute) -> Bool {
         settableAttributes.contains(attribute)
+    }
+
+    func node(_ attribute: UIAttribute) -> (any UINode)? {
+        nodeAttributes[attribute]
     }
 
     func set(_ attribute: UIAttribute, to value: UIValue) throws {

@@ -43,7 +43,7 @@ public final class AXNode: UINode {
 
     public func string(_ attribute: UIAttribute) -> String? {
         let value = read(attribute)
-        if attribute == .url { return (value as? URL)?.absoluteString }
+        if attribute == .url { return (value as? URL)?.absoluteString ?? value as? String }
         return value as? String
     }
 
@@ -64,7 +64,7 @@ public final class AXNode: UINode {
         switch (attribute, value) {
         case (.value, .string(let text)), (.selectedText, .string(let text)):
             encoded = text as CFString
-        case (.value, .bool(let flag)), (.focused, .bool(let flag)):
+        case (.value, .bool(let flag)), (.focused, .bool(let flag)), (.selected, .bool(let flag)):
             encoded = flag ? kCFBooleanTrue : kCFBooleanFalse
         case (.selectedTextRange, .range(let location, let length)):
             var range = CFRange(location: location, length: length)
@@ -75,7 +75,28 @@ public final class AXNode: UINode {
         default:
             throw RemoteError.axFailure(operation: attribute.rawValue, code: AXError.illegalArgument.rawValue)
         }
-        let result = AXUIElementSetAttributeValue(element, attribute.rawValue as CFString, encoded)
+        try setAttribute(attribute, encoded)
+    }
+
+    public func node(_ attribute: UIAttribute) -> (any UINode)? {
+        guard let value = read(attribute), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return AXNode(unsafeDowncast(value, to: AXUIElement.self))
+    }
+
+    public func nodes(_ attribute: UIAttribute) -> [any UINode]? {
+        (read(attribute) as? [AXUIElement])?.map(AXNode.init)
+    }
+
+    public func setNodes(_ attribute: UIAttribute, to nodes: [any UINode]) throws {
+        let elements = nodes.compactMap { ($0 as? AXNode)?.element }
+        guard elements.count == nodes.count else {
+            throw RemoteError.axFailure(operation: attribute.rawValue, code: AXError.illegalArgument.rawValue)
+        }
+        try setAttribute(attribute, elements as CFArray)
+    }
+
+    private func setAttribute(_ attribute: UIAttribute, _ value: CFTypeRef) throws {
+        let result = AXUIElementSetAttributeValue(element, attribute.rawValue as CFString, value)
         guard result == .success else {
             throw RemoteError.axFailure(operation: attribute.rawValue, code: result.rawValue)
         }

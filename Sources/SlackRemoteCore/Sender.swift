@@ -27,58 +27,83 @@ public struct Sender {
         let button: any UINode
         let previous: String?
         do {
-            let before = try composer.freshView()
-            let list = try composer.scope.list(in: before)
-            previous = list.children.compactMap(composer.scope.timestamp).max()
-            try Composer.requireLiveDestination(before)
-
-            button = try sendControl(expecting: expected, broadcast: alsoSendToChannel, deadline: deadline)
+            previous = try newestTimestamp()
+            button = try sendControl(broadcast: alsoSendToChannel, deadline: deadline) { controls in
+                guard try controls.state() == expected, controls.pendingFiles.isEmpty else {
+                    throw RemoteError.writeUnverified(draftLeft: true)
+                }
+            }
         } catch {
             throw composer.observedFailure(error)
         }
 
-        // The AX result alone cannot establish whether Slack sent the message.
-        try? button.perform(.press)
         let expectedMessage = MessageText.collapse(text)
         do {
-            let ts = try Poll.until(deadline) {
+            let ts = try pressAndConfirm(button, after: previous, deadline: deadline,
+                                         unconfirmed: .sendUnconfirmed) { message, _ in
+                !message.emojiOmitted && MessageText.collapse(message.text) == expectedMessage
+            }
+            return Receipt(method: method, ts: ts)
+        } catch {
+            throw composer.observedFailure(RemoteError.sendUnconfirmed)
+        }
+    }
+
+    func newestTimestamp() throws -> String? {
+        let before = try composer.freshView()
+        let list = try composer.scope.list(in: before)
+        let newest = list.children.compactMap(composer.scope.timestamp).max()
+        try Composer.requireLiveDestination(before)
+        return newest
+    }
+
+    /// The AX result alone cannot establish whether Slack sent the message.
+    func pressAndConfirm(_ button: any UINode, after previous: String?, deadline: Date,
+                         unconfirmed: RemoteError, matches: (Message, any UINode) -> Bool) throws -> String {
+        try? button.perform(.press)
+        do {
+            if let ts = try Poll.until(deadline, {
                 let view = try composer.freshView()
                 let state = try composer.controls(in: view).state()
                 try Composer.requireLiveDestination(view)
                 guard state == .empty else { return nil as String? }
-
-                let messages = try MessageReader.read(view, scope: composer.scope, limit: nil).messages
-                let match = messages.first { message in
-                    (previous.map { message.ts > $0 } ?? true)
-                        && !message.emojiOmitted && MessageText.collapse(message.text) == expectedMessage
+                let list = try composer.scope.list(in: view)
+                let rows = MessageReader.readList(list, scope: composer.scope).rows
+                let match = rows.first { row in
+                    (previous.map { row.item.ts > $0 } ?? true) && matches(row.item, row.node)
                 }
                 try Composer.requireLiveDestination(view)
-                return match?.ts
-            }
-            if let ts { return Receipt(method: method, ts: ts) }
+                return match?.item.ts
+            }) { return ts }
         } catch {
-            throw composer.observedFailure(RemoteError.sendUnconfirmed)
+            throw unconfirmed
         }
-
-        throw composer.observedFailure(RemoteError.sendUnconfirmed)
+        throw unconfirmed
     }
 
-    private func sendControl(expecting expected: ComposerState, broadcast: Bool, deadline: Date) throws -> any UINode {
+    func sendControl(broadcast: Bool, deadline: Date,
+                     verify: (Composer.Controls) throws -> Void) throws -> any UINode {
+        func verifiedControls(in view: VerifiedView) throws -> Composer.Controls {
+            let controls = try composer.controls(in: view)
+            try verify(controls)
+            guard controls.enabled == true else { throw RemoteError.writeUnverified(draftLeft: true) }
+            return controls
+        }
+
         var final = try composer.freshView()
         if case .thread(let thread) = composer.scope {
             let checkbox = try broadcastCheckbox(for: thread, in: final)
             if checkbox.bool(.value) != broadcast {
-                try requireDraft(expecting: expected, in: final)
+                _ = try verifiedControls(in: final)
                 try composer.requireMutation(final, deadline: deadline)
                 try? checkbox.perform(.press)
                 final = try composer.freshView()
-                let refreshed = try broadcastCheckbox(for: thread, in: final)
-                guard refreshed.bool(.value) == broadcast else {
-                    throw RemoteError.writeUnverified(draftLeft: true)
-                }
+            }
+            guard try broadcastCheckbox(for: thread, in: final).bool(.value) == broadcast else {
+                throw RemoteError.writeUnverified(draftLeft: true)
             }
         }
-        let controls = try requireDraft(expecting: expected, in: final)
+        let controls = try verifiedControls(in: final)
         try composer.requireMutation(final, deadline: deadline)
         return controls.sendButton
     }
@@ -93,12 +118,4 @@ public struct Sender {
         return box
     }
 
-    @discardableResult
-    private func requireDraft(expecting expected: ComposerState, in view: VerifiedView) throws -> Composer.Controls {
-        let controls = try composer.controls(in: view)
-        guard try controls.state() == expected, controls.enabled == true else {
-            throw RemoteError.writeUnverified(draftLeft: true)
-        }
-        return controls
-    }
 }

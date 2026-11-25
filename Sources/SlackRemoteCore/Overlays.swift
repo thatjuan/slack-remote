@@ -80,6 +80,7 @@ public enum Overlays {
 
     /// Identify the caller's popup when Slack also displays an auxiliary dialog.
     static func withModal<T>(in tree: SlackTree, deadline: Date, within locator: Locator?,
+                             replacedBySheet: Bool = false,
                              opening: () throws -> Void, _ body: (any UINode) throws -> T) throws -> T {
         try tree.refresh()
         try requireUnblocked(in: tree)
@@ -97,19 +98,47 @@ public enum Overlays {
             return try body(modal)
         }
 
-        if observedModal {
-            try closeModal(in: tree, deadline: deadline, within: locator)
-        } else {
+        try tree.withCleanup {
             do {
                 try tree.refresh()
             } catch {
                 throw RemoteError.overlayLeftOpen
             }
-            if !open(in: tree).isEmpty {
-                try closeModal(in: tree, deadline: deadline, within: locator)
+            let overlays = open(in: tree)
+            if replacedBySheet, observedModal, overlays == [.sheet] { return }
+            if observedModal || !overlays.isEmpty {
+                try closeModal(in: tree, deadline: max(deadline, tree.cleanupDeadline(after: 2)), within: locator)
             }
         }
         return try result.get()
+    }
+
+    static func onlySheet(in tree: SlackTree) throws -> (any UINode)? {
+        let overlays = open(in: tree)
+        if overlays.isEmpty { return nil }
+        guard overlays == [.sheet] else { throw RemoteError.uiBlocked }
+        return try SlackWindow.currentWindow(in: tree).window.one(Locators.fileSheet)
+    }
+
+    /// Cancels the owned native file sheet, including after an interruption.
+    static func cancelSheet(in tree: SlackTree, deadline: Date) throws {
+        try tree.withCleanup {
+            do {
+                try tree.refresh()
+                guard let sheet = try onlySheet(in: tree) else { return }
+                guard let cancel = sheet.node(.cancelButton), cancel.role == "AXButton" else {
+                    throw RemoteError.overlayLeftOpen
+                }
+                try? cancel.perform(.press)
+                let closed = try Poll.until(deadline) {
+                    try tree.refresh()
+                    return try onlySheet(in: tree) == nil ? true : nil
+                }
+                guard closed == true else { throw RemoteError.overlayLeftOpen }
+            } catch {
+                throw RemoteError.overlayLeftOpen
+            }
+        }
     }
 
     static func kind(_ node: any UINode) -> OverlayKind? {

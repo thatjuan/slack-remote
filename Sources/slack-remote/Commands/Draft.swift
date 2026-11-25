@@ -102,6 +102,7 @@ enum WriteCommand {
     ) throws {
         typealias Outcome = Swift.Result<Previewable<Output>, any Error>
         var app: SlackApp?
+        var sessionTree: SlackTree?
         var completedWork: Outcome?
         let outcome: Outcome
         do {
@@ -113,6 +114,7 @@ enum WriteCommand {
                 return (config, destination)
             }) { slack, tree, deadline, prepared in
                 app = slack
+                sessionTree = tree
                 let (config, destination) = prepared
                 let result = Outcome {
                     if let preview {
@@ -156,7 +158,7 @@ enum WriteCommand {
             envelope = .init(ok: false, command: command, slackVersion: app?.version,
                              warnings: app?.warnings, result: nil,
                              error: .init(code: remote.code, message: remote.message, details: details))
-            status = remote.exitStatus
+            status = sessionTree?.interruptionRequested == true ? 130 : remote.exitStatus
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

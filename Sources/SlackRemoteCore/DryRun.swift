@@ -9,6 +9,7 @@ public struct DryRun: Encodable {
         case readThread(rootTs: String, history: Bool, close: Bool)
         case reply(rootTs: String, text: String, broadcast: Bool)
         case react(ts: String, thread: String?)
+        case upload(file: FileStaging.File, text: String?, thread: String?, broadcast: Bool)
     }
 
     public enum ComposerStatus: String, Encodable { case empty, text, pending, unknown }
@@ -19,6 +20,7 @@ public struct DryRun: Encodable {
     public let atDestination: Bool
     public let account: Account.Verification
     public let composer: ComposerStatus
+    public let file: FileStaging.File?
     public let plan: [String]
 
     public static func preview(_ operation: Operation, destination: Destination, user: UserID?,
@@ -50,6 +52,8 @@ public struct DryRun: Encodable {
             switch operation {
             case .reply(let rootTs, _, _):
                 scope = (try? ThreadView.verify(rootTs: rootTs, in: view)).map(MessageScope.thread)
+            case .upload(_, _, let rootTs?, _):
+                scope = (try? ThreadView.verify(rootTs: rootTs, in: view)).map(MessageScope.thread)
             case .readThread, .react:
                 scope = nil
             default:
@@ -65,6 +69,7 @@ public struct DryRun: Encodable {
             try Navigator.requireSidebarTarget(for: destination, in: client)
         }
 
+        var file: FileStaging.File?
         switch operation {
         case .open:
             break
@@ -104,6 +109,14 @@ public struct DryRun: Encodable {
             if let rootTs { plan.append("open and verify thread \(rootTs)") }
             plan += ["locate message \(ts)", "check existing reactions", "open emoji picker",
                      "verify message and exact emoji cell", "press emoji once if needed", "confirm reaction"]
+        case .upload(let candidate, let text, let rootTs, let broadcast):
+            if let state, state != .empty { throw Composer.conflict(state) }
+            file = candidate
+            if let rootTs { plan.append("open and verify thread \(rootTs)") }
+            plan += ["require an empty composer", "stage the file", "attach the staged file by URL"]
+            if let text { plan.append("write text (\(text.count) characters)") }
+            if rootTs != nil { plan.append(broadcast ? "verify broadcast enabled" : "verify broadcast disabled") }
+            plan += ["final gate", "press send once", "confirm attachment", "remove staged copy"]
         }
         let composer: ComposerStatus
         switch state {
@@ -114,7 +127,7 @@ public struct DryRun: Encodable {
         }
         guard Date() < deadline else { throw RemoteError.timeout }
         return DryRun(team: destination.team, conversation: destination.conversation,
-                      atDestination: atDestination, account: account, composer: composer, plan: plan)
+                      atDestination: atDestination, account: account, composer: composer, file: file, plan: plan)
     }
 
     private static func requireCompatibleDraft(_ state: ComposerState?, text: String) throws {
