@@ -34,13 +34,13 @@ public struct FileStaging {
         }
     }
 
-    public init(path: String, maxSize: Int = Self.defaultLimit) throws {
+    public init(path: String, name: String? = nil, maxSize: Int = Self.defaultLimit) throws {
         guard (1...Self.maximumLimit).contains(maxSize) else {
             throw RemoteError.fileRejected(reason: "invalid_size_limit")
         }
         guard !path.isEmpty else { throw RemoteError.fileRejected(reason: "missing") }
         let requested = URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
-        let name = requested.lastPathComponent
+        let name = name ?? requested.lastPathComponent
         guard !name.isEmpty, !name.hasPrefix("."), !name.contains("/"), !name.contains(":"),
               !name.contains("\\"), name.rangeOfCharacter(from: .controlCharacters) == nil else {
             throw RemoteError.fileRejected(reason: "invalid_name")

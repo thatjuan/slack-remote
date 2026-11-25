@@ -174,10 +174,15 @@ enum CommandSupport {
 
     static func fail<Output: Encodable>(_ command: String, error: RemoteError,
                                          app: SlackApp? = nil, result: Output?) throws -> Never {
+        try writeFailure(command, error: error, app: app, result: result)
+        throw ExitCode(error.exitStatus)
+    }
+
+    static func writeFailure<Output: Encodable>(_ command: String, error: RemoteError,
+                                                 app: SlackApp? = nil, result: Output?) throws {
         let envelope = Failure(command: command, slackVersion: app?.version, warnings: app?.warnings, result: result,
                                error: .init(code: error.code, message: error.message, details: error.details))
         try write(envelope, to: .standardError)
-        throw ExitCode(error.exitStatus)
     }
 
     static func remoteError(_ error: any Error) -> RemoteError {
