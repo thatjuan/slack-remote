@@ -359,8 +359,9 @@ public enum SearchResults {
                                                            in: tree, deadline: tree.cleanupDeadline(after: 4))
                                 try requireNoNewInput()
                             }
-                            _ = try navigator.navigate(to: scopedAnchor, user: nil, interrupt: true, forReading: true,
-                                                       in: tree, deadline: tree.cleanupDeadline(after: 4))
+                            let route: Navigator.RoutePreference = scopedAnchor.conversation.kind == .directMessage ? .sidebar : .auto
+                            _ = try navigator.navigate(to: scopedAnchor, user: nil, interrupt: true, preference: route,
+                                                       forReading: true, in: tree, deadline: tree.cleanupDeadline(after: 4))
                             current = try currentClient()
                         }
                         // Slack can remount the owned scoped pane after leaving full search.
@@ -370,10 +371,6 @@ public enum SearchResults {
                             current = try currentClient()
                         }
                         _ = try ownedWindow(current)
-                        if !current.window.all(Locators.scopedSearchHeader).isEmpty {
-                            try clearActiveQuery(in: tree, deadline: tree.cleanupDeadline(after: 3))
-                            current = try currentClient()
-                        }
                     }
                     if !current.window.all(Locators.scopedSearchHeader).isEmpty {
                         try dismissScoped(in: ownedWindow(current), deadline: tree.cleanupDeadline(after: 4)) {

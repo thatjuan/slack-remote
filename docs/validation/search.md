@@ -64,11 +64,11 @@ On stock Slack 4.53.292, the self-DM Files retest reused the existing synthetic 
 
 With a query that never acquired a full-search launcher, Slack showed only the scoped empty pane. Its Back and Close buttons shared icon classes, with Back nested under the header. The fixed CLI returned `13 / unsupported_destination`, closed the direct Close control and restored `notes`.
 
-Full self-scoped search could hide and later remount its pane. A direct self-DM link from full search landed on Slack’s DMs index during the probe. Cleanup returns through the verified starting conversation before revisiting the scoped anchor when appropriate. It closes the pane only after matching the submitting window and anchor and checking for intervening input. The fixtures exercise a late launcher, a stale pane during expansion, a missing or changed In filter, and a pane that predates submission.
+Full self-scoped search could hide and later remount its pane. A direct self-DM link from full search landed on Slack’s DMs index during the probe. Cleanup returns through the verified starting conversation and uses the exact sidebar row to revisit the self-DM. It closes the pane only after matching the submitting window and anchor and checking for intervening input. The fixtures exercise a late launcher, a stale pane during expansion, a missing or changed In filter, and a pane that predates submission.
 
 The scoped Notes Files retest returned three identified files. A self-scoped Messages search matched the existing synthetic message’s timestamp. The following People directory run and in-place read both succeeded and left `notes` with an empty composer and no stale panes, modal or sheet. The scoped sort menu uses its original control for dismissal when Slack omits its backdrop.
 
-Self-scoped Jump reached the exact synthetic message, and a separate rendered read matched its timestamp. A dry run confirmed the signed-in account and empty self-DM composer. After Jump, Slack remounted the old scoped pane on a later self-DM visit. The next search refused to close that pre-existing pane. The investigation closed the pane using its verified header before continuing in `notes`.
+Self-scoped Jump reached the exact synthetic message, and a separate rendered read matched its timestamp. A dry run confirmed the signed-in account and empty self-DM composer. After Jump, Slack remounted the old scoped pane on a later self-DM visit. The next search refused to close that pre-existing pane. The investigation closed the pane using its verified header before continuing in `notes`. SIGINT at search-popup opening and at results readiness each returned 130 with empty stdout and restored the verified `notes` view.
 
 ## Remaining live validation in priority order
 
