@@ -1,5 +1,14 @@
 import Foundation
 
+struct SearchPopup {
+    let node: any UINode
+
+    func matches(_ candidate: any UINode) -> Bool {
+        if let id = node.domID, !id.isEmpty { return candidate.domID == id }
+        return node as AnyObject === candidate as AnyObject
+    }
+}
+
 public enum SearchModal {
     public struct Filters: Encodable {
         public let conversation: ConversationID?
@@ -53,10 +62,14 @@ public enum SearchModal {
 
         var toggled: [String] = []
         var submitted = false
+        var owned: SearchPopup?
         let outcome = Result {
+            try tree.checkInterruption()
             try button.perform(.press)
             guard let opened = try Poll.until(deadline, { try current(in: tree) }) else { throw RemoteError.timeout }
+            owned = SearchPopup(node: opened)
             onOpen()
+            try tree.checkInterruption()
             let openedField = try opened.one(Locators.searchQuery)
             if !MessageText.normalize(openedField.string(.value) ?? "").isEmpty || !activeFilters(in: opened).isEmpty {
                 try opened.one(Locators.searchClear).perform(.press)
@@ -87,7 +100,9 @@ public enum SearchModal {
                 } else {
                     expected.remove(id)
                 }
-                try filter(id, in: modal).perform(.press)
+                let control = try filter(id, in: modal)
+                try tree.checkInterruption()
+                try control.perform(.press)
                 guard try Poll.until(deadline, {
                     guard let refreshed = try current(in: tree), activeFilters(in: refreshed) == expected,
                           try tokenCount(in: refreshed) == expected.count else { return nil as Bool? }
@@ -110,6 +125,7 @@ public enum SearchModal {
                 throw RemoteError.uiDrift(locator: Locators.searchQuery.name, found: 0)
             }
             guard Date() < deadline else { throw RemoteError.timeout }
+            try tree.checkInterruption()
             try field.set(.value, to: .string(query))
             let plain: Bool? = try Poll.until(min(deadline, Date().addingTimeInterval(2))) {
                 guard let field = try current(in: tree)?.one(Locators.searchQuery),
@@ -142,16 +158,14 @@ public enum SearchModal {
                 guard selected.count <= 1 else { throw RemoteError.uiDrift(locator: "searchSubmit", found: selected.count) }
                 return selected.first
             }) else { throw RemoteError.uiDrift(locator: "searchSubmit", found: 0) }
+            try tree.checkInterruption()
             try submit.perform(.press)
             submitted = true
             return try read()
         }
-        try close(in: tree, rollback: submitted ? [] : toggled)
+        try tree.withCleanup { try close(in: tree, owned: owned, rollback: submitted ? [] : toggled) }
+        try tree.checkInterruption()
         return try outcome.get()
-    }
-
-    public static func recoverInterruptedSearch(in tree: SlackTree) throws {
-        try close(in: tree, rollback: [])
     }
 
     static func matches(_ query: String, followedBy suffix: String, in field: any UINode) -> Bool {
@@ -227,27 +241,43 @@ public enum SearchModal {
         return activeFilters(in: modal) == Set(requested) && count == requested.count
     }
 
-    private static func close(in tree: SlackTree, rollback: [String]) throws {
+    private static func close(in tree: SlackTree, owned: SearchPopup?, rollback: [String]) throws {
+        var fieldCleanupError: (any Error)?
         do {
-            let cleanupDeadline = Date().addingTimeInterval(3)
-            if let modal = try current(in: tree) {
-                var rollbackError: (any Error)?
+            let cleanupDeadline = tree.cleanupDeadline(after: 3)
+            func ownedModal() throws -> (any UINode)? {
+                guard let modal = try current(in: tree) else { return nil }
+                guard owned?.matches(modal) == true else { throw RemoteError.overlayLeftOpen }
+                return modal
+            }
+            func requireTime() throws {
+                guard Date() < cleanupDeadline else { throw RemoteError.overlayLeftOpen }
+            }
+            if try ownedModal() != nil {
                 for id in rollback.reversed() {
                     do {
-                        guard let refreshed = try current(in: tree) else { break }
+                        guard let refreshed = try ownedModal() else { break }
                         if activeFilters(in: refreshed).contains(id) {
+                            try requireTime()
                             try filter(id, in: refreshed).perform(.press)
                         }
-                    } catch { rollbackError = error }
+                    } catch { fieldCleanupError = error }
                 }
-                let clear = try (current(in: tree) ?? modal).all(Locators.searchClear)
-                if clear.count == 1 { try clear.first?.perform(.press) }
+                let clear = try ownedModal()?.all(Locators.searchClear) ?? []
                 guard clear.count <= 1 else { throw RemoteError.overlayLeftOpen }
-                if let fresh = try current(in: tree) {
-                    let buttons = fresh.all(Locators.searchClose)
-                    if buttons.count == 1 { try? buttons.first?.perform(.press) }
+                if let button = clear.first {
+                    try requireTime()
+                    do { try button.perform(.press) }
+                    catch { fieldCleanupError = error }
                 }
-                if try current(in: tree) != nil {
+                if let fresh = try ownedModal() {
+                    let buttons = fresh.all(Locators.searchClose)
+                    if buttons.count == 1 {
+                        try requireTime()
+                        try? buttons.first?.perform(.press)
+                    }
+                }
+                if try ownedModal() != nil {
                     let original = try SlackWindow.currentWindow(in: tree).location
                     var backdrop = try ownedBackdrop(in: tree)
                     if backdrop == nil, let rebuild = tree.rebuildOwnedMode {
@@ -255,21 +285,24 @@ public enum SearchModal {
                         guard try SlackWindow.currentWindow(in: tree).location == original else {
                             throw RemoteError.overlayLeftOpen
                         }
-                        backdrop = try ownedBackdrop(in: tree)
+                        if try ownedModal() != nil { backdrop = try ownedBackdrop(in: tree) }
                     }
-                    guard let backdrop else { throw RemoteError.overlayLeftOpen }
-                    try? backdrop.perform(.press)
-                    guard try Poll.until(cleanupDeadline, {
-                        try current(in: tree) == nil ? true : nil
-                    }) == true else { throw RemoteError.overlayLeftOpen }
+                    if try ownedModal() != nil {
+                        guard let backdrop else { throw RemoteError.overlayLeftOpen }
+                        try requireTime()
+                        try? backdrop.perform(.press)
+                        guard try Poll.until(cleanupDeadline, {
+                            try ownedModal() == nil ? true : nil
+                        }) == true else { throw RemoteError.overlayLeftOpen }
+                    }
                 }
-                if let rollbackError { throw rollbackError }
             }
             try tree.refresh()
             guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
         } catch {
             throw RemoteError.overlayLeftOpen
         }
+        if let fieldCleanupError { throw fieldCleanupError }
     }
 
     private static func ownedBackdrop(in tree: SlackTree) throws -> (any UINode)? {

@@ -12,26 +12,29 @@ final class SearchModalFixture {
     let inFilter: FakeNode
     let unrelated = FakeNode(role: "AXCheckBox", domID: "quick-filter-in-G0FFFFFFF")
     let fromFilter = FakeNode(role: "AXCheckBox", domID: "quick-filter-from-U0EEEEEEE")
+    let window: FakeNode
     let tree: SlackTree
+    var didWriteQuery: (() -> Void)?
+    private let web: FakeNode
     private let wrapper: FakeNode
     private let modal: FakeNode
 
     init(includeMatchingFilter: Bool = true, queryReadback: String? = nil) throws {
         inFilter = FakeNode(role: "AXCheckBox", domID: "quick-filter-in-C0BBBBBBB")
-        let window = SlackFixture.window()
-        let web = try #require(window.one(Locators.webArea) as? FakeNode)
+        window = SlackFixture.window()
+        web = try #require(window.one(Locators.webArea) as? FakeNode)
         let conversation = web.children + [search]
         web.children = conversation
-        modal = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Content"])
+        modal = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Content"], domID: "fixture-search-popup")
         wrapper = FakeNode(role: "AXGroup", domClasses: ["c-search_modal__wrapper"])
         modal.children = [field, submit, unrelated, fromFilter] + (includeMatchingFilter ? [inFilter] : [])
         backdrop.children = [modal]
         wrapper.children = [backdrop]
         tree = SlackTree(windows: [window])
 
-        search.onPerform = { [wrapper] _ in web.children = [wrapper] }
-        backdrop.onPerform = { _ in web.children = conversation }
-        submit.onPerform = { _ in web.children = conversation }
+        search.onPerform = { [wrapper, web] _ in web.children = [wrapper] }
+        backdrop.onPerform = { [web] _ in web.children = conversation }
+        submit.onPerform = { [web] _ in web.children = conversation }
         submit.actionNames = ["AXPress"]
         field.settableAttributes = [.value]
         clear.onPerform = { [weak self] _ in
@@ -45,6 +48,7 @@ final class SearchModalFixture {
             guard attribute == .value, case .string(let text) = value else { return }
             field.attributes[.value] = .string(queryReadback ?? text)
             modal.children.append(clear)
+            didWriteQuery?()
         }
         for filter in [inFilter, unrelated] {
             filter.actionNames = ["AXPress"]
@@ -64,13 +68,23 @@ final class SearchModalFixture {
         }
     }
 
-    func run(query: String = "slack-remote test", filtered: Bool = true,
+    func replaceSearchPopup() -> (clear: FakeNode, backdrop: FakeNode) {
+        let clear = FakeNode(role: "AXButton", domClasses: ["c-search__input_box__clear"])
+        let replacement = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Content"],
+                                   domID: "fixture-replacement-popup", children: [clear])
+        let backdrop = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Overlay"], children: [replacement])
+        web.children = [backdrop]
+        return (clear, backdrop)
+    }
+
+    func run(query: String = "slack-remote test", filtered: Bool = true, in session: SlackTree? = nil,
+             onOpen: () -> Void = {},
              read: () throws -> Void = {}) throws {
         try SearchModal.run(query: query,
                             filters: .init(conversation: filtered ? destination.conversation : nil,
                                            fromMe: false, hasLink: false, threadsOnly: false),
-                            from: destination, account: nil, in: tree,
-                            deadline: Date().addingTimeInterval(1), read: read)
+                            from: destination, account: nil, in: session ?? tree,
+                            deadline: Date().addingTimeInterval(1), onOpen: onOpen, read: read)
     }
 }
 
@@ -85,6 +99,7 @@ final class SearchResultsFixture {
     let messageTab: FakeNode
     let filesTab: FakeNode
     let tree: SlackTree
+    let scopedClose: FakeNode?
     private let window: FakeNode
     private let web: FakeNode
     private let conversationNodes: [any UINode]
@@ -104,6 +119,7 @@ final class SearchResultsFixture {
         let sort = FakeNode(role: "AXPopUpButton", domID: "search-filter-sort-filter",
                             attributes: [.value: .string("most_relevant")])
         if atEnd {
+            scopedClose = nil
             let results: any UINode = rows.isEmpty ? FakeNode(role: "AXGroup", domClasses: ["c-empty_state"]) : list
             root = FakeNode(role: "AXGroup", domClasses: ["p-view_contents--sidebar"],
                             children: [messageTab, filesTab, sort, results])
@@ -112,10 +128,15 @@ final class SearchResultsFixture {
         } else {
             for row in rows { row.domClasses = ["c-virtual_list__item"] }
             let close = FakeNode(role: "AXButton", domClasses: ["c-icon_button", "c-icon_button--size_medium", "c-icon_button--default"])
+            close.actionNames = ["AXPress"]
+            scopedClose = close
             let header = FakeNode(role: "AXGroup", domClasses: ["p-explorer_header", "p-explorer_header--search_in_channel"],
                                   children: [close])
             root = FakeNode(role: "AXGroup", domClasses: ["p-view_contents--secondary"], children: [header, list])
             web.children.append(root)
+            close.onPerform = { [web, root] _ in
+                web.children.removeAll { $0 as AnyObject === root }
+            }
         }
         tree = SlackTree(windows: [window])
 
@@ -170,6 +191,14 @@ final class SearchResultsFixture {
             primary.children.append(FakeNode(role: "AXGroup", domClasses: ["c-virtual_list__item"],
                                              domID: "message-list_\(message)"))
         }
+    }
+
+    func showScopedResults(in destination: Destination) {
+        web.attributes[.url] = .string("https://app.slack.com/client/\(destination.team.rawValue)/\(destination.conversation.rawValue)")
+    }
+
+    func showConversationFilter() {
+        root.children.append(FakeNode(role: "AXButton", domClasses: [Locators.searchFilterActive], domID: "filter-in"))
     }
 
     func navigator(restores: Bool = true) -> Navigator {
