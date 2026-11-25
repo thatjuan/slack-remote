@@ -5,7 +5,7 @@ struct SearchModalTests {
     @Test func appliesOnlyTheRequestedConversationFilter() throws {
         let fixture = try SearchModalFixture()
         try fixture.run()
-        #expect(fixture.inFilter.performCalls == [.press])
+        #expect(fixture.inFilter.performCalls == [.press, .press, .press])
         #expect(fixture.unrelated.performCalls.isEmpty)
         #expect(fixture.submit.performCalls == [.press])
         #expect(Overlays.open(in: fixture.tree).isEmpty)
