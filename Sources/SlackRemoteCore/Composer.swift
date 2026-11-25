@@ -37,8 +37,8 @@ public struct Composer {
         let value: Bool
         let clear: ClearMethod?
 
-        // Enable each method only after semantic read-back in the stock client.
-        static let live = Methods(selectedText: false, value: false, clear: nil)
+        // Slack acknowledges AXSelectedText but leaves the editor unchanged. AXValue updates Quill.
+        static let live = Methods(selectedText: false, value: true, clear: .value)
     }
 
     private let view: VerifiedView
@@ -112,6 +112,7 @@ public struct Composer {
                     let focusedAgain = try editableControls(expecting: .empty, deadline: deadline)
                     if focusedAgain.editor.bool(.focused) == true {
                         attempted = true
+                        // Classify the result by read-back even if AX reports an error.
                         try? focusedAgain.editor.set(.selectedText, to: .string(text))
                         if try verifyWrite(expected, deadline: deadline) { return .selectedText }
                     }
@@ -169,10 +170,16 @@ public struct Composer {
                 attempted = true
                 try? controls.editor.set(.value, to: .string(""))
             }
-            if try Poll.until(methodDeadline(deadline), { try state() == .empty ? true : nil }) == true {
-                return true
+            func isCleared() throws -> Bool {
+                let current = try state()
+                if current == .empty { return true }
+                guard current == expected else {
+                    throw WriteFailure(RemoteError.writeUnverified(draftLeft: true), draftLeft: true)
+                }
+                return false
             }
-            if try state() == .empty { return true }
+            if try Poll.until(methodDeadline(deadline), { try isCleared() ? true : nil }) == true { return true }
+            if try isCleared() { return true }
             throw RemoteError.writeUnverified(draftLeft: true)
         } catch {
             if let failure = error as? WriteFailure { throw failure }

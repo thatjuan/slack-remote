@@ -61,19 +61,19 @@ struct Draft: ParsableCommand {
 }
 
 enum WriteCommand {
-    // These failures carry an observation alongside the foundation error code and details.
-    private struct Failure: Encodable {
+    private struct Envelope<Output: Encodable>: Encodable {
         struct ErrorBody: Encodable {
             let code: String
             let message: String
             let details: [String: RemoteError.Detail]?
         }
 
-        var ok = false
+        let ok: Bool
         let command: String
         let slackVersion: String?
         let warnings: [String]?
-        let error: ErrorBody
+        let result: Output?
+        let error: ErrorBody?
     }
 
     static func idleCheck(_ target: DestinationOptions) -> () throws -> Void {
@@ -87,7 +87,10 @@ enum WriteCommand {
     ) throws {
         let destination = try target.requireDestination()
         let deadline = Date().addingTimeInterval(options.timeout)
-        var app: SlackApp?
+        var slackVersion: String?
+        var warnings: [String]?
+        var completedWork: Swift.Result<Output, any Error>?
+        let outcome: Swift.Result<Output, any Error>
         do {
             try MessageText.validate(text, allowBroadcast: allowBroadcast)
             try Environment.requireUnlocked(Environment.guiSession())
@@ -95,28 +98,53 @@ enum WriteCommand {
             let running = try SlackApp.requireRunning()
             try SlackApp.requireVisible(running)
             let slack = try SlackApp(running: running)
-            app = slack
+            slackVersion = slack.version
+            warnings = slack.warnings
             try CommandLock.acquire(deadline: deadline)
-            let result = try slack.withTree(deadline: deadline) { tree in
-                if options.debug { CommandSupport.debugTree(tree) }
-                try idleCheck(target)()
-                let navigation = try Navigator(slackApp: slack).navigate(to: destination, user: target.user,
-                    interrupt: target.interrupt, in: tree, deadline: deadline)
-                let view = try SlackWindow.verify(destination, in: tree)
-                return try work(view, tree, navigation.route, deadline)
+            outcome = try slack.withTree(deadline: deadline) { tree in
+                let result = Swift.Result {
+                    if options.debug { CommandSupport.debugTree(tree) }
+                    try idleCheck(target)()
+                    let navigation = try Navigator(slackApp: slack).navigate(to: destination, user: target.user,
+                        interrupt: target.interrupt, in: tree, deadline: deadline)
+                    let view = try SlackWindow.verify(destination, in: tree)
+                    return try work(view, tree, navigation.route, deadline)
+                }
+                completedWork = result
+                return result
             }
-            try CommandSupport.succeed(command, app: slack, result: result)
-        } catch let failure as WriteFailure {
-            let envelope = Failure(command: command, slackVersion: app?.version, warnings: app?.warnings,
-                error: .init(code: failure.error.code, message: failure.error.message, details: failure.details))
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            var data = try encoder.encode(envelope)
-            data.append(0x0a)
-            try FileHandle.standardError.write(contentsOf: data)
-            throw ExitCode(failure.error.exitStatus)
         } catch {
-            try CommandSupport.fail(command, error: CommandSupport.remoteError(error), app: app, result: nil as Bool?)
+            if let completedWork {
+                // Preserve the verified send outcome if restoring the AX tree fails afterward.
+                warnings?.append("tree_restore_failed")
+                outcome = completedWork
+            } else {
+                outcome = .failure(error)
+            }
         }
+
+        let envelope: Envelope<Output>
+        let status: Int32
+        switch outcome {
+        case .success(let result):
+            envelope = .init(ok: true, command: command, slackVersion: slackVersion,
+                             warnings: warnings, result: result, error: nil)
+            status = 0
+        case .failure(let error):
+            let failure = error as? WriteFailure
+            let remote = failure?.error ?? CommandSupport.remoteError(error)
+            let details = failure.map(\.details) ?? remote.details
+            envelope = .init(ok: false, command: command, slackVersion: slackVersion,
+                             warnings: warnings, result: nil,
+                             error: .init(code: remote.code, message: remote.message, details: details))
+            status = remote.exitStatus
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        var data = try encoder.encode(envelope)
+        data.append(0x0a)
+        let stream = status == 0 ? FileHandle.standardOutput : .standardError
+        try stream.write(contentsOf: data)
+        if status != 0 { throw ExitCode(status) }
     }
 }
