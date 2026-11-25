@@ -11,7 +11,11 @@ public enum UIAttribute: String {
     case selectedTextRange = "AXSelectedTextRange"
 }
 
-public enum UIAction: String { case press = "AXPress" }
+public enum UIAction: String {
+    case press = "AXPress"
+    case scrollToVisible = "AXScrollToVisible"
+    case showMenu = "AXShowMenu"
+}
 
 public enum UIValue: Equatable {
     case string(String)
@@ -25,6 +29,8 @@ public protocol UINode {
     var domClasses: [String] { get }
     var domID: String? { get }
     var children: [any UINode] { get }
+    var actionNames: [String] { get }
+    func isSettable(_ attribute: UIAttribute) -> Bool
     func string(_ attribute: UIAttribute) -> String?
     func bool(_ attribute: UIAttribute) -> Bool?
     func set(_ attribute: UIAttribute, to value: UIValue) throws

@@ -1,0 +1,75 @@
+import Foundation
+
+public enum OverlayKind: Equatable { case modal, sheet }
+
+public enum Overlays {
+    /// Kinds currently open in Slack's windows, in tree order.
+    public static func open(in tree: SlackTree) -> [OverlayKind] {
+        tree.windows.flatMap { $0.descendants().compactMap(kind) }
+    }
+
+    public static func requireUnblocked(in tree: SlackTree) throws {
+        guard open(in: tree).isEmpty else { throw RemoteError.uiBlocked }
+    }
+
+    /// Closes a modal owned by the caller and waits for the primary view to return.
+    public static func closeModal(in tree: SlackTree, deadline: Date) throws {
+        do {
+            try tree.refresh()
+            let window = try SlackWindow.currentWindow(in: tree).window
+            if open(in: tree).contains(.modal) {
+                let backdrop = try window.one(Locators.modalOverlay)
+                // AX can report an error for a press that Slack already handled.
+                try? backdrop.perform(.press)
+            }
+
+            let closed: Bool? = try Poll.until(deadline) {
+                try tree.refresh()
+                let current = try SlackWindow.currentWindow(in: tree)
+                return !open(in: tree).contains(.modal) && current.window.all(Locators.primaryView).count == 1
+                    ? true : nil
+            }
+            guard closed == true else { throw RemoteError.overlayLeftOpen }
+        } catch {
+            throw RemoteError.overlayLeftOpen
+        }
+    }
+
+    /// Owns the one modal opened by opening and closes it even when body throws.
+    public static func withModal<T>(in tree: SlackTree, deadline: Date,
+                                    opening: () throws -> Void,
+                                    _ body: (any UINode) throws -> T) throws -> T {
+        try tree.refresh()
+        try requireUnblocked(in: tree)
+        let result = Result {
+            try opening()
+            let modal: (any UINode)? = try Poll.until(deadline) {
+                try tree.refresh()
+                let window = try SlackWindow.currentWindow(in: tree).window
+                let modals = window.descendants().filter { kind($0) == .modal }
+                return open(in: tree) == [.modal] ? modals.first : nil
+            }
+            guard let modal else { throw RemoteError.timeout }
+            return try body(modal)
+        }
+
+        do {
+            try tree.refresh()
+        } catch {
+            throw RemoteError.overlayLeftOpen
+        }
+        if open(in: tree).contains(.modal) {
+            try closeModal(in: tree, deadline: deadline)
+        } else if case .success = result {
+            // The body may have dismissed the modal itself. Still check the view.
+            try closeModal(in: tree, deadline: deadline)
+        }
+        return try result.get()
+    }
+
+    static func kind(_ node: any UINode) -> OverlayKind? {
+        if node.role == "AXSheet" { return .sheet }
+        if node.domClasses.contains(Locators.modalContent) { return .modal }
+        return nil
+    }
+}

@@ -44,4 +44,24 @@ struct SlackAppTests {
         #expect(modeChanges == [true, false])
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
     }
+
+    @Test func waitsForParseableClientURLAndReportsLostTreeDuringRefresh() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let window = SlackFixture.window()
+        let web = try #require(try window.one(Locators.webArea) as? FakeNode)
+        let valid = web.attributes[.url]
+        var reads = 0
+        let app = SlackApp(identity: identity, supportDirectory: directory,
+                           readWindows: {
+            reads += 1
+            web.attributes[.url] = (3...4).contains(reads) ? valid : .string("https://slack.com")
+            return [window]
+        }, setMode: { _ in })
+        try app.withTree(deadline: Date().addingTimeInterval(2)) { tree in
+            #expect(reads == 4)
+            let error = #expect(throws: RemoteError.self) { try tree.refresh() }
+            #expect(error?.code == "tree_unavailable")
+        }
+    }
 }
