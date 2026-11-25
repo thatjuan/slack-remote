@@ -24,6 +24,8 @@ Slack discards the conversation filter for these sources. A conversation flag re
 
 Results follow Slack's order at the time of the search. Slack chooses the ranking and may truncate the rendered message excerpts. The CLI keeps result types separate. `complete: true` means the CLI reached the end of the results Slack listed for the selected type. The workspace may hold other matches.
 
+People search can return a display label with `user: null` and `idSource: "none"` when Slack exposes no identifier for that card. Treat the label as display text. The [people directory](people.md) can return user IDs when its cards expose them.
+
 The defaults are 50 results and 20 pages. `--max-results` accepts 1–1,000. Each result set reports `complete`, `stopReason`, and `pages`. An explicit bound reports `limit`. A stall or deadline returns `partial_result` (19), or the available results if you pass `--allow-partial`.
 
 Search returns to the starting conversation after reading the results. `--open INDEX` selects a zero-based message result and leaves Slack on the verified message destination. The result includes `opened.inThread` when the message appears in the thread pane. Results with `idSource: "none"` have null identifiers and cannot be opened. The `sort` field is null when Slack exposes no selected sort.

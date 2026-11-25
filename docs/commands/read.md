@@ -20,4 +20,6 @@ Both results contain `team`, `conversation`, `route`, `scope`, `complete`, `stop
 
 In message text, an emoji with a Slack shortcode appears as `:short_name:`. A message includes `emojiOmitted: true` if Slack exposes an emoji image without a shortcode.
 
-History exits successfully at the requested boundary or limit. A stall or deadline returns `partial_result` (19). Pass `--allow-partial` to return the available messages with `complete: false` and the corresponding stop reason. A rendered account mismatch returns `account_mismatch`. An existing modal or sheet returns `ui_blocked`.
+History exits successfully at the requested boundary or limit. A stall or deadline returns `partial_result` (19). Pass `--allow-partial` to return the available messages with `complete: false` and the corresponding stop reason. A rendered account mismatch returns `account_mismatch`.
+
+Primary reads and history can run under the recognized attachment preview in a verified self-DM. The preview stays open. Other blocking overlays return `ui_blocked`.
