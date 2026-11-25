@@ -17,5 +17,6 @@ extension Locators {
     static let emojiCell = Locator(name: "emojiCell", role: "AXCell", classes: ["p-emoji_picker__list_item"])
     static let emojiSearch = Locator(name: "emojiSearch", role: "AXTextField", classes: ["p-emoji_picker__input"])
     static let emojiImage = Locator(name: "emojiImage", role: "AXImage", classes: ["c-emoji"])
+    static let emojiGroup = Locator(name: "emojiGroup", role: "AXGroup", classes: ["c-emoji"])
     static let reactionCheckbox = Locator(name: "reaction", role: "AXCheckBox", classes: ["c-reaction"])
 }

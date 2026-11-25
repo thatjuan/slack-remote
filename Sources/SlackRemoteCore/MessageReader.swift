@@ -68,14 +68,21 @@ public enum MessageReader {
             let sender = senderButtons.isEmpty ? previousSender : title.flatMap { $0.isEmpty ? nil : $0 }
             var emojiOmitted = false
             let sections = nodes.filter(Locators.richTextSection.matches).map { section in
-                section.descendants().compactMap { node in
-                    if node.role == "AXStaticText" { return node.string(.value) }
-                    if Locators.emojiImage.matches(node) {
-                        if let name = MessageText.emojiName(from: node.string(.title)) { return ":\(name):" }
-                        emojiOmitted = true
+                var parts: [String] = []
+                var pending = Array(section.children.reversed())
+                while let node = pending.popLast() {
+                    if Locators.emojiImage.matches(node) || Locators.emojiGroup.matches(node) {
+                        if let name = MessageText.renderedEmojiName(node) {
+                            parts.append(":\(name):")
+                        } else {
+                            emojiOmitted = true
+                        }
+                        continue
                     }
-                    return nil
-                }.joined()
+                    if node.role == "AXStaticText", let value = node.string(.value) { parts.append(value) }
+                    pending.append(contentsOf: node.children.reversed())
+                }
+                return parts.joined()
             }
             let hasAttachments = nodes.contains { node in
                 node.domClasses.contains { $0.hasPrefix(Locators.attachmentPrefix) }

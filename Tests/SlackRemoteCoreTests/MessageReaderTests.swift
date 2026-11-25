@@ -51,6 +51,18 @@ struct MessageReaderTests {
         #expect(json[1]["emojiOmitted"] as? Bool == true)
     }
 
+    @Test func readsTheEmojiShortcodeFromSlackInlineImageGroups() throws {
+        let nested = FakeNode(role: "AXImage", attributes: [.title: .string("tada emoji")])
+        let inline = FakeNode(role: "AXGroup", domClasses: ["c-emoji", "c-emoji--inline"], children: [nested])
+        let unrelated = FakeNode(role: "AXImage", attributes: [.title: .string("other emoji")])
+        let result = try read([
+            MessageFixtures.message(0, sections: [[MessageFixtures.text("Before "), inline, unrelated,
+                                                  MessageFixtures.text(" after")]]),
+        ])
+        #expect(result.messages.map(\.text) == ["Before :tada: after"])
+        #expect(result.messages.map(\.emojiOmitted) == [false])
+    }
+
     @Test func inheritsOnlyAnAvailableSender() throws {
         let result = try read([
             MessageFixtures.message(0),

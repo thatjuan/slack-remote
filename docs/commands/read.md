@@ -14,7 +14,7 @@ Rendered reads return the message list Slack has drawn, in order from oldest to 
 
 `--history` scrolls toward older messages and attempts to return to the newest message before exiting. It defaults to 200 messages and 50 pages, with an upper limit of 2,000 messages. `--since` accepts a Slack timestamp such as `1700000000.000100` and keeps messages strictly newer than it. Messages that arrive during paging can appear in the snapshot.
 
-Both results contain `team`, `conversation`, `route`, `scope`, `complete`, `stopReason`, `pages`, `readAt`, `skippedItems`, and `messages`. History adds `scrollRestored` and, when messages are returned, `oldestTs` and `newestTs`. Rendered results always report `complete: false`, `stopReason: "limit"`, and `pages: 0`.
+Both results contain `team`, `conversation`, `route`, `scope`, `complete`, `stopReason`, `pages`, `readAt`, `skippedItems`, and `messages`. History adds `scrollRestored` and, when messages are returned, `oldestTs` and `newestTs`. Rendered conversation reads report `complete: false`, `stopReason: "limit"`, and `pages: 0`.
 
 `--thread TS` uses the parent message's timestamp. The result adds `thread` and uses `scope: "rendered-thread"`. A rendered thread read reports one snapshot in `pages`. Combine it with `--history` to page the thread and use the history options above. The pane stays open unless you pass `--close-thread`. `--dry-run` reports the plan without opening a pane.
 

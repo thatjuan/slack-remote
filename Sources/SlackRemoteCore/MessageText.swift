@@ -11,6 +11,16 @@ public enum MessageText {
         return isEmojiName(name) ? name : nil
     }
 
+    static func renderedEmojiName(_ node: any UINode) -> String? {
+        if Locators.emojiImage.matches(node) { return emojiName(from: node.string(.title)) }
+        guard Locators.emojiGroup.matches(node), node.children.count == 1,
+              let image = node.children.first, image.role == "AXImage",
+              let title = image.string(.title) else { return nil }
+        if let name = emojiName(from: title) { return name }
+        // Slack 4.53.292 exposes an image titled "<shortcode> emoji" inside the c-emoji group.
+        return title.wholeMatch(of: #/([a-z0-9_+'-]+) emoji/#).map { String($0.1) }
+    }
+
     public static func validate(_ text: String, allowBroadcast: Bool, checkEmojiNames: Bool = true) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw RemoteError.unsafeText(reason: "blank_text") }
