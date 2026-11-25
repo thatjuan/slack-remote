@@ -7,6 +7,11 @@ struct Doctor: ParsableCommand {
 
     @OptionGroup var options: CommandOptions
 
+    @Flag(help: "Ask macOS for Accessibility access, open System Settings and wait up to 120 seconds for it.")
+    var grant = false
+
+    private static let grantWait: TimeInterval = 120
+
     private struct Check: Encodable {
         let name: String
         let ok: Bool
@@ -55,12 +60,26 @@ struct Doctor: ParsableCommand {
     }
 
     func run() throws {
-        let deadline = Date().addingTimeInterval(options.timeout)
         var report = Report()
         if let session = report.check("gui_session", work: Environment.guiSession) {
             _ = report.check("screen_unlocked") { try Environment.requireUnlocked(session) }
         }
-        _ = report.check("accessibility_trusted", work: Environment.requireAccessibilityTrust)
+        let host = HostApp.current()
+        let guiChecksPassed = report.firstError == nil
+        do {
+            if grant && guiChecksPassed {
+                guard Environment.requestAccessibilityTrust(until: Date().addingTimeInterval(Self.grantWait)) else {
+                    throw RemoteError.accessibilityNotTrusted(host: host)
+                }
+            } else {
+                try Environment.requireAccessibilityTrust()
+            }
+            report.pass("accessibility_trusted", detail: host?.name)
+        } catch {
+            report.fail("accessibility_trusted", error: error)
+        }
+
+        let deadline = Date().addingTimeInterval(options.timeout)
 
         var app: SlackApp?
         if report.firstError == nil, let running = report.check("slack_running", work: SlackApp.requireRunning) {

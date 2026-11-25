@@ -25,6 +25,8 @@ Check the exit status before parsing stdout. On success the CLI writes one JSON 
 
 `slackVersion` appears when the command knows the Slack version. On failure, `warnings`, `result` and `error.details` may be absent. For example, `doctor` can include its checks on failure, and a directory listing can include the items it collected before stopping. Branch on `error.code`. Use `message` and `details` for diagnostics.
 
+For `accessibility_not_trusted`, `error.details` always includes `settingsUrl`. When the host app is detected, it also includes `hostApp` (name), `hostPath`, and `hostBundleId` when known. All four values are strings. `hostApp` is a best guess from the parent process chain; SSH and tmux sessions may have no detectable host app. Run `slack-remote doctor --grant` from the host app to request access and open Settings; ordinary commands fail without showing UI.
+
 ## Exit statuses
 
 | Status | Error codes and conditions |

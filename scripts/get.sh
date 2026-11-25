@@ -71,7 +71,7 @@ main() {
         *) printf 'Add %s to PATH, for example:\n  echo '\''export PATH="%s:$PATH"'\'' >> ~/.zshrc\n' \
             "$prefix/bin" "$prefix/bin" ;;
     esac
-    printf 'Next, run: slack-remote doctor\n'
+    printf 'Next, run: slack-remote doctor --grant\n'
 }
 
 # Only replace a regular, executable, valid slack-remote binary.
