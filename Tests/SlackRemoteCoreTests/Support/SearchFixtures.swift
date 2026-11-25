@@ -255,6 +255,24 @@ final class SearchResultsFixture {
         return (tree, launcher)
     }
 
+    func showScopedSortWithoutBackdrop() -> FakeNode {
+        let control = FakeNode(role: "AXPopUpButton", domID: Locators.searchResultSortID)
+        control.actionNames = ["AXPress"]
+        let item = FakeNode(role: "AXMenuItem", domClasses: Locators.searchSourceItem.classes + [Locators.searchSourceChecked],
+                            domID: "menu-12-0")
+        let menu = FakeNode(role: "AXMenu", domClasses: Locators.searchSourceMenu.classes, children: [item])
+        let popup = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], children: [menu])
+        control.onPerform = { [web] _ in
+            if web.children.contains(where: { $0 as AnyObject === popup }) {
+                web.children.removeAll { $0 as AnyObject === popup }
+            } else {
+                web.children.append(popup)
+            }
+        }
+        root.children.append(control)
+        return control
+    }
+
     @discardableResult
     func showSources(withBackdrop: Bool = true, ignoreFirstDismissal: Bool = false,
                      peopleGrid: Bool = false) -> FakeNode {

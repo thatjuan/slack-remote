@@ -370,6 +370,10 @@ public enum SearchResults {
                             current = try currentClient()
                         }
                         _ = try ownedWindow(current)
+                        if !current.window.all(Locators.scopedSearchHeader).isEmpty {
+                            try clearActiveQuery(in: tree, deadline: tree.cleanupDeadline(after: 3))
+                            current = try currentClient()
+                        }
                     }
                     if !current.window.all(Locators.scopedSearchHeader).isEmpty {
                         try dismissScoped(in: ownedWindow(current), deadline: tree.cleanupDeadline(after: 4)) {
@@ -474,9 +478,18 @@ public enum SearchResults {
         guard control.actionNames.contains(UIAction.press.rawValue), Date() < deadline else { return nil }
         return try withMenu(in: tree, deadline: deadline, opening: { try control.perform(.press) },
                             fallback: { window in
-            guard let root = try? window.one(Locators.searchResults) else { return nil }
+            let root: (any UINode)?
+            if view.scope == nil {
+                root = try? window.one(Locators.searchResults)
+            } else {
+                let panes = window.all(Locators.secondaryView).filter { !$0.all(Locators.scopedSearchHeader).isEmpty }
+                root = panes.count == 1 ? panes.first : nil
+            }
+            guard let root else { return nil }
             let matches = root.descendants().filter { $0.domID == Locators.searchResultSortID }
-            return matches.count == 1 ? matches.first : nil
+            guard matches.count == 1, let match = matches.first,
+                  view.scope == nil || SearchPopup(node: control).matches(match) else { return nil }
+            return match
         }) { menu in
             let chosen = menu.all(Locators.searchSourceItem).filter { $0.domClasses.contains(Locators.searchSourceChecked) }
             guard chosen.count == 1,

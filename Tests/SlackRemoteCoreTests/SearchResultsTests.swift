@@ -112,6 +112,16 @@ struct SearchResultsTests {
         }
     }
 
+    @Test func scopedSortClosesItsOwnedMenuThroughTheSameControl() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)], atEnd: false)
+        fixture.showScopedResults(in: Fixture.result)
+        let control = fixture.showScopedSortWithoutBackdrop()
+        let snapshot = try fixture.read(maxItems: 1, timeout: 3)
+        #expect(snapshot.sort == "most_relevant")
+        #expect(control.performCalls == [.press, .press])
+        #expect(Overlays.open(in: fixture.tree).isEmpty)
+    }
+
     @Test func doesNotTreatDisplayedTextAsAnID() throws {
         let row = Fixture.row(id: nil, sender: "Ada", text: "search-message-G0FFFFFFF-1700000000.000100")
         let fixture = try Fixture(rows: [row])
