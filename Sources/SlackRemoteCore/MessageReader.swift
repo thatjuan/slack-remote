@@ -28,11 +28,22 @@ public struct Reaction: Encodable, Equatable {
 
 public enum MessageReader {
     private static let messageID = #/message-list_([0-9]{10}\.[0-9]{6})/#
+    private static let timestamp = #/[0-9]{10}\.[0-9]{6}/#
+
+    public static func isTimestamp(_ value: String) -> Bool {
+        value.wholeMatch(of: timestamp) != nil
+    }
 
     public static func read(_ view: VerifiedView, limit: Int?) throws -> (messages: [Message], skippedItems: Int) {
         let list = try view.primaryView.one(Locators.messageList)
-        var messages: [Message] = []
-        var skippedItems = 0
+        let rendered = readList(list)
+        let rows = limit.map { Array(rendered.rows.suffix(max(0, $0))) } ?? rendered.rows
+        return (rows.map(\.item), rendered.skipped.count)
+    }
+
+    static func readList(_ list: any UINode) -> (rows: [(key: String, node: any UINode, item: Message)], skipped: [String]) {
+        var rows: [(key: String, node: any UINode, item: Message)] = []
+        var skipped: [String] = []
         var previousSender: String?
 
         for item in list.children {
@@ -44,7 +55,7 @@ public enum MessageReader {
             }
             let bodies = item.all(Locators.messageBody)
             guard bodies.count == 1, let body = bodies.first else {
-                skippedItems += 1
+                skipped.append(String(match.1))
                 previousSender = nil
                 continue
             }
@@ -67,16 +78,14 @@ public enum MessageReader {
                 return Reaction(label: label, reacted: node.domClasses.contains(Locators.reactionReacted))
             }
 
-            messages.append(Message(ts: String(match.1), sender: sender,
-                                    senderInherited: senderButtons.isEmpty && sender != nil,
-                                    text: sections.joined(separator: "\n"), hasAttachments: hasAttachments,
-                                    reactions: reactions))
+            let message = Message(ts: String(match.1), sender: sender,
+                                  senderInherited: senderButtons.isEmpty && sender != nil,
+                                  text: sections.joined(separator: "\n"), hasAttachments: hasAttachments,
+                                  reactions: reactions)
+            rows.append((key: message.ts, node: item, item: message))
             previousSender = sender
         }
 
-        if let limit, limit < messages.count {
-            messages = Array(messages.suffix(max(0, limit)))
-        }
-        return (messages, skippedItems)
+        return (rows, skipped)
     }
 }

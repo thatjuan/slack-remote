@@ -6,6 +6,7 @@ struct Open: ParsableCommand {
 
     @OptionGroup var options: CommandOptions
     @OptionGroup var target: DestinationOptions
+    @Flag(help: "Show the plan without changing Slack.") var dryRun = false
 
     private struct Result: Encodable {
         let team: String
@@ -15,16 +16,27 @@ struct Open: ParsableCommand {
     }
 
     func validate() throws {
-        _ = try target.requireDestination()
+        try target.validate(requireDestination: true)
     }
 
     func run() throws {
-        let destination = try target.requireDestination()
         try CommandSupport.run("open", options: options) { app, tree, deadline in
-            let navigation = try Navigator(slackApp: app).navigate(to: destination, user: target.user,
-                interrupt: target.interrupt, in: tree, deadline: deadline)
-            return Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
-                          route: navigation.route, focusRestored: navigation.focusRestored)
+            let config = try Config.load()
+            let destination = try target.requireDestination(using: config)
+            let output: Previewable<Result>
+            if dryRun {
+                output = .preview(try DryRun.preview(.open, destination: destination, user: target.user,
+                                                    preference: target.route.preference, config: config,
+                                                    in: tree, deadline: deadline, warn: app.warn))
+            } else {
+                let navigation = try target.navigate(to: destination, app: app, in: tree, deadline: deadline)
+                let view = try SlackWindow.verify(destination, in: tree)
+                _ = try Account.verify(team: destination.team, in: tree, config: config, access: .read,
+                                       deadline: deadline, window: view.window, warn: app.warn)
+                output = .actual(Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,
+                                        route: navigation.route, focusRestored: navigation.focusRestored))
+            }
+            return output
         }
     }
 }

@@ -1,15 +1,17 @@
 import Foundation
 
-public struct TeamID: Hashable {
+public struct TeamID: Hashable, RawRepresentable, Codable {
     public let rawValue: String
 
     public init?(_ raw: String) {
         guard raw.range(of: #"\A[TE][A-Z0-9]{8,}\z"#, options: .regularExpression) != nil else { return nil }
         rawValue = raw
     }
+
+    public init?(rawValue: String) { self.init(rawValue) }
 }
 
-public struct ConversationID: Hashable {
+public struct ConversationID: Hashable, RawRepresentable, Codable {
     public enum Kind: String, Encodable { case channel, directMessage, group }
 
     public let rawValue: String
@@ -18,6 +20,8 @@ public struct ConversationID: Hashable {
         guard raw.range(of: #"\A[CDG][A-Z0-9]{8,}\z"#, options: .regularExpression) != nil else { return nil }
         rawValue = raw
     }
+
+    public init?(rawValue: String) { self.init(rawValue) }
 
     public var kind: Kind {
         switch rawValue.first {
@@ -28,16 +32,18 @@ public struct ConversationID: Hashable {
     }
 }
 
-public struct UserID: Hashable {
+public struct UserID: Hashable, RawRepresentable, Codable {
     public let rawValue: String
 
     public init?(_ raw: String) {
         guard raw.range(of: #"\A[UW][A-Z0-9]{8,}\z"#, options: .regularExpression) != nil else { return nil }
         rawValue = raw
     }
+
+    public init?(rawValue: String) { self.init(rawValue) }
 }
 
-public struct Destination: Hashable {
+public struct Destination: Hashable, Codable {
     public let team: TeamID
     public let conversation: ConversationID
 

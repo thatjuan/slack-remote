@@ -2,6 +2,12 @@ import ArgumentParser
 import Foundation
 import SlackRemoteCore
 
+enum RouteOption: String, ExpressibleByArgument {
+    case auto, sidebar
+
+    var preference: Navigator.RoutePreference { self == .sidebar ? .sidebar : .auto }
+}
+
 struct CommandOptions: ParsableArguments {
     @Option(help: "Time limit for the command in seconds.") var timeout: Double = 15
     @Flag(help: "Print aggregate Accessibility diagnostics to stderr.") var debug = false
@@ -29,25 +35,59 @@ struct DestinationOptions: ParsableArguments {
         return user
     }) var user: UserID?
 
+    @Option(help: "Configured destination name.") var dest: String?
+    @Option(help: "Navigation route (auto or sidebar).") var route: RouteOption = .auto
     @Flag(help: "Allow changes while Slack is in use.") var interrupt = false
 
-    func validate() throws {
+    var hasDestination: Bool { dest != nil || team != nil }
+
+    func validate() throws { try validate(requireDestination: false) }
+
+    func validate(requireDestination: Bool) throws {
+        if let dest {
+            guard Config.isValidName(dest) else { throw ValidationError("Invalid destination name.") }
+            guard team == nil, channel == nil else {
+                throw ValidationError("--dest cannot be combined with --team or --channel.")
+            }
+        }
         guard (team == nil) == (channel == nil) else {
             throw ValidationError("Supply --team and --channel together.")
         }
-        if user != nil, team == nil {
-            throw ValidationError("--user requires --team and --channel.")
+        if (requireDestination || user != nil || route != .auto), !hasDestination {
+            throw ValidationError("Supply --dest or both --team and --channel.")
         }
     }
 
-    var destination: Destination? {
-        guard let team, let channel else { return nil }
-        return Destination(team: team, conversation: channel)
+    func resolve(using config: Config?) throws -> Destination? {
+        if let dest {
+            guard let destination = config?.destinations[dest] else { throw RemoteError.unsupportedDestination }
+            return destination
+        }
+        if let team, let channel { return Destination(team: team, conversation: channel) }
+        return nil
     }
 
-    func requireDestination() throws -> Destination {
-        guard let destination else { throw ValidationError("--team and --channel are required.") }
+    func requireDestination(using config: Config?) throws -> Destination {
+        guard let destination = try resolve(using: config) else { throw RemoteError.unsupportedDestination }
         return destination
+    }
+
+    func navigate(to destination: Destination, app: SlackApp, in tree: SlackTree, deadline: Date) throws
+        -> NavigationResult {
+        try Navigator(slackApp: app).navigate(to: destination, user: user, interrupt: interrupt,
+                                              preference: route.preference, in: tree, deadline: deadline)
+    }
+}
+
+enum Previewable<Actual: Encodable>: Encodable {
+    case actual(Actual)
+    case preview(DryRun)
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .actual(let result): try result.encode(to: encoder)
+        case .preview(let result): try result.encode(to: encoder)
+        }
     }
 }
 
@@ -76,22 +116,49 @@ enum CommandSupport {
     }
 
     static func run<Output: Encodable>(
-        _ command: String, options: CommandOptions,
+        _ command: String, options: CommandOptions, allowOverlays: Bool = false,
+        output: ((SlackApp, Output) throws -> Void)? = nil,
         work: (SlackApp, SlackTree, Date) throws -> Output
     ) throws {
-        let deadline = Date().addingTimeInterval(options.timeout)
+        var app: SlackApp?
         do {
-            try Environment.requireUnlocked(Environment.guiSession())
-            try Environment.requireAccessibilityTrust()
-            let running = try SlackApp.requireRunning()
-            try SlackApp.requireVisible(running)
-            let app = try SlackApp(running: running)
-            try CommandLock.acquire(deadline: deadline)
-            let result = try app.withTree(deadline: deadline) { tree in
-                if options.debug { debugTree(tree) }
-                return try work(app, tree, deadline)
+            let (slack, result) = try withSession(options: options, allowOverlays: allowOverlays, prepare: {}) {
+                slack, tree, deadline, _ in
+                app = slack
+                return try work(slack, tree, deadline)
             }
-            try succeed(command, app: app, result: result)
+            if let output { try output(slack, result) }
+            else { try succeed(command, app: slack, result: result) }
+        } catch {
+            try fail(command, error: remoteError(error), app: app, result: nil as Bool?)
+        }
+    }
+
+    static func withSession<Context, Output>(
+        options: CommandOptions, allowOverlays: Bool = false, prepare: () throws -> Context,
+        work: (SlackApp, SlackTree, Date, Context) throws -> Output
+    ) throws -> (SlackApp, Output) {
+        let deadline = Date().addingTimeInterval(options.timeout)
+        try CommandLock.acquire(deadline: deadline)
+        let context = try prepare()
+        try Environment.requireUnlocked(Environment.guiSession())
+        try Environment.requireAccessibilityTrust()
+        let running = try SlackApp.requireRunning()
+        try SlackApp.requireVisible(running)
+        let app = try SlackApp(running: running)
+        let result = try app.withTree(deadline: deadline) { tree in
+            if options.debug { debugTree(tree) }
+            if !allowOverlays { try Overlays.requireUnblocked(in: tree) }
+            return try work(app, tree, deadline, context)
+        }
+        return (app, result)
+    }
+
+    static func runLocal<Output: Encodable>(_ command: String, options: CommandOptions,
+                                            work: () throws -> Output) throws {
+        do {
+            try CommandLock.acquire(deadline: Date().addingTimeInterval(options.timeout))
+            try succeed(command, app: nil, result: work())
         } catch {
             try fail(command, error: remoteError(error), result: nil as Bool?)
         }
