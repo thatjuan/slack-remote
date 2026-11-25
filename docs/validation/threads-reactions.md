@@ -22,3 +22,15 @@ The probes ran on main-mac against Slack 4.53.292 with the private write-restric
 | Self-DM | Opening the verified destination brought up an interactive popover. The CLI then blocked further commands, and the shortcode send was skipped. The existing draft was left untouched. A locked stock-client deep link returned Slack to the starting channel and verification found no blocking popup or sheet. |
 
 Each channel check finished at the verified destination with no blocking popup or sheet. The release build, all 103 fixture tests, CLI help and invalid-emoji argument checks, and `git diff --check` passed.
+
+## Reaction route follow-up
+
+The follow-up used the same two synthetic channel roots on Slack 4.53.292. The rendered message exposed no target-specific reaction button. Its `AXShowMenu` action marked the exact message, and the enabled `p-message_actions_menu__add_reaction` item replaced that menu with one `p-emoji_picker`. The native window, web area and conversation URL stayed the same. The sidebar showed the verified account before the menu press and again after the picker closed.
+
+The unfiltered picker exposed the same shortcode in multiple places. Assigning the shortcode to the search field left one enabled, pressable `AXCell` under the sticky-header result table. The corresponding row and column entries compared equal as native Accessibility elements. The picker itself kept its native identity through search.
+
+The first synthetic reaction press closed the picker. The original confirmation check returned `reaction_unconfirmed`. A separate read confirmed one checked `c-reaction--reacted` checkbox on the exact message, with the child image title in the form `<short_name> emoji`. The probe made no further press on that message.
+
+With confirmation using the observed checkbox state and image title, one press on the second synthetic root returned `reacted: true` and `alreadyReacted: false`. An identical repeat returned `alreadyReacted: true`. An unknown shortcode returned `unsafe_text` and closed the picker. The second run left the other synthetic root unchanged. The final check verified the original channel with no blocking popup or sheet. The self-DM was untouched during the follow-up.
+
+The release build, all 128 fixture tests, and `git diff --check` passed.

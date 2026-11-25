@@ -14,6 +14,9 @@ extension Locators {
     static let threadBroadcast = Locator(name: "threadBroadcast", role: "AXCheckBox", classes: ["c-input_checkbox"],
                                          idPrefix: "p-thread_footer__broadcast_checkbox--")
     static let emojiPicker = Locator(name: "emojiPicker", role: "AXGroup", classes: ["p-emoji_picker"])
+    static let emojiResults = Locator(name: "emojiResults", role: "AXGroup", classes: ["p-emoji_picker__sticky_header"])
+    static let emojiResultsTable = Locator(name: "emojiResultsTable", role: "AXTable", classes: ["p-emoji_picker__heading"])
+    static let emojiResultsRow = Locator(name: "emojiResultsRow", role: "AXRow", classes: ["p-emoji_picker__row"])
     static let emojiCell = Locator(name: "emojiCell", role: "AXCell", classes: ["p-emoji_picker__list_item"])
     static let emojiSearch = Locator(name: "emojiSearch", role: "AXTextField", classes: ["p-emoji_picker__input"])
     static let emojiImage = Locator(name: "emojiImage", role: "AXImage", classes: ["c-emoji"])
