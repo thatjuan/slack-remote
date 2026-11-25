@@ -220,7 +220,7 @@ public struct Composer {
             return view
         }
         try tree.refresh()
-        return try SlackWindow.verify(view.destination, in: tree)
+        return try SlackWindow.reverifyWrite(view, in: tree)
     }
 
     static func requireLiveDestination(_ view: VerifiedView) throws {

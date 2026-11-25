@@ -22,7 +22,7 @@ public enum Overlays {
               (try? Account.sidebarSelfDM(in: view.window)) == destination.conversation,
               hasReadableSelfDM(view),
               let webArea = try? view.window.one(Locators.webArea),
-              hasAttachmentPopover(in: webArea) else { throw RemoteError.uiBlocked }
+              attachmentPopover(in: webArea) != nil else { throw RemoteError.uiBlocked }
     }
 
     private static func hasReadableSelfDM(_ view: VerifiedView) -> Bool {
@@ -40,7 +40,7 @@ public enum Overlays {
     }
 
     // Slack renders this attachment preview in a ReactModal portal without taking focus from the conversation.
-    private static func hasAttachmentPopover(in webArea: any UINode) -> Bool {
+    static func attachmentPopover(in webArea: any UINode) -> (backdrop: any UINode, popup: any UINode)? {
         let backdrops = webArea.all(Locators.modalPortal).flatMap(\.children)
             .filter(Locators.attachmentPopoverBackdrop.matches)
         guard backdrops.count == 1, let backdrop = backdrops.first, backdrop.subrole == nil,
@@ -49,8 +49,9 @@ public enum Overlays {
               popup.bool(.focused) == false, popup.node(.cancelButton) == nil,
               popup.children.map(\.role) == ["AXLink", "AXStaticText", "AXStaticText"],
               let link = popup.children.first, Locators.attachmentPopoverLink.matches(link),
-              link.children.map(\.role) == ["AXStaticText"] else { return false }
-        return !popup.descendants().contains { $0.bool(.focused) == true }
+              link.children.map(\.role) == ["AXStaticText"],
+              !popup.descendants().contains(where: { $0.bool(.focused) == true }) else { return nil }
+        return (backdrop, popup)
     }
 
     /// Returns the expected control inside the sole blocking modal in the current window.

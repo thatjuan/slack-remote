@@ -197,27 +197,10 @@ struct NavigatorTests {
     }
 
     private func selfDMWithAttachmentPopover() throws
-        -> (window: FakeNode, editor: FakeNode, row: FakeNode, backdrop: FakeNode, popup: FakeNode) {
-        let window = SlackFixture.window(conversation: dm.conversation.rawValue)
-        let row = try #require(window.all(Locators.sidebarRow).first { $0.domID == dm.conversation.rawValue } as? FakeNode)
-        row.domClasses.append(Locators.selfDM)
-        let target = try #require(try row.one(Locators.sidebarRowTarget) as? FakeNode)
-        target.attributes[.enabled] = .bool(true)
-        target.actionNames = [UIAction.press.rawValue]
-        let editor = try #require(try window.one(Locators.composerEditor) as? FakeNode)
-        editor.domClasses.removeAll { $0 == Locators.composerBlank }
-        editor.attributes[.value] = .string("Existing draft")
-        editor.attributes[.enabled] = .bool(true)
-        let text = FakeNode(role: "AXStaticText")
-        let link = FakeNode(role: "AXLink", domClasses: Locators.attachmentPopoverLink.classes, children: [text])
-        let popup = FakeNode(role: "AXGroup", domClasses: Locators.attachmentPopover.classes,
-                             children: [link, FakeNode(role: "AXStaticText"), FakeNode(role: "AXStaticText")],
-                             attributes: [.focused: .bool(false)])
-        let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.attachmentPopoverBackdrop.classes, children: [popup])
-        let portal = FakeNode(role: "AXGroup", domClasses: Locators.modalPortal.classes, children: [backdrop])
-        let webArea = try #require(try window.one(Locators.webArea) as? FakeNode)
-        webArea.children.append(portal)
-        return (window, editor, row, backdrop, popup)
+        -> SelfPreviewFixture {
+        let fixture = try SelfPreviewFixture()
+        fixture.setDraft("Existing draft")
+        return fixture
     }
 
     @Test func recentInputWhileSlackIsFrontmostBlocksNavigation() {

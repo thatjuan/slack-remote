@@ -14,6 +14,15 @@ public struct VerifiedView {
     public let destination: Destination
     public let window: any UINode
     public let primaryView: any UINode
+    let passiveSelfPreview: PassiveSelfPreview?
+
+    init(destination: Destination, window: any UINode, primaryView: any UINode,
+         passiveSelfPreview: PassiveSelfPreview? = nil) {
+        self.destination = destination
+        self.window = window
+        self.primaryView = primaryView
+        self.passiveSelfPreview = passiveSelfPreview
+    }
 }
 
 public enum SlackWindow {
@@ -47,6 +56,19 @@ public enum SlackWindow {
     public static func verifyForReading(_ destination: Destination, in tree: SlackTree) throws -> VerifiedView {
         try Overlays.requireUnblockedForConversationRead(in: tree)
         return try verifyDestination(destination, in: tree)
+    }
+
+    public static func verifyPrimaryWrite(_ destination: Destination, in tree: SlackTree,
+                                          config: Config?) throws -> VerifiedView {
+        if Overlays.open(in: tree).isEmpty { return try verifyDestination(destination, in: tree) }
+        guard let account = config?.accounts.first(where: { $0.team == destination.team }),
+              account.selfDM == destination.conversation else { throw RemoteError.uiBlocked }
+        return try PassiveSelfPreview.bind(destination, in: tree, account: account)
+    }
+
+    public static func reverifyWrite(_ view: VerifiedView, in tree: SlackTree) throws -> VerifiedView {
+        if let preview = view.passiveSelfPreview { return try preview.verify(view.destination, in: tree) }
+        return try verify(view.destination, in: tree)
     }
 
     static func verify(_ destination: Destination, in tree: SlackTree,

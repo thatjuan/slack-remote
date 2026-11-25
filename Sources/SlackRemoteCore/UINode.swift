@@ -14,6 +14,7 @@ public enum UIAttribute: String {
     case enabled = "AXEnabled"
     case focused = "AXFocused"
     case main = "AXMain"
+    case modal = "AXModal"
     case minimized = "AXMinimized"
     case selectedText = "AXSelectedText"
     case selectedTextRange = "AXSelectedTextRange"

@@ -61,7 +61,8 @@ struct Upload: ParsableCommand {
         let preview: DryRun.Operation? = dryRun
             ? .upload(file: source.file, text: text, thread: thread, broadcast: alsoSendToChannel)
             : nil
-        try WriteCommand.runUsingApp("upload", options: options, target: target, preview: preview, validateInput: {
+        try WriteCommand.runUsingApp("upload", options: options, target: target, primaryComposer: thread == nil,
+                                     preview: preview, validateInput: {
             if let text { try MessageText.validate(text, allowBroadcast: allowBroadcast) }
         }) { app, config, view, tree, route, deadline in
             let account = { (window: any UINode) in

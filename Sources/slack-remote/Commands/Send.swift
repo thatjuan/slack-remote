@@ -23,7 +23,8 @@ struct Send: ParsableCommand {
 
     func run() throws {
         try WriteCommand.run("send", text: text, allowBroadcast: allowBroadcast, options: options,
-                             target: target, preview: dryRun ? .send(text) : nil) { view, tree, route, deadline in
+                             target: target, primaryComposer: true,
+                             preview: dryRun ? .send(text) : nil) { view, tree, route, deadline in
             let sender = Sender(view: view, in: tree, requireIdle: WriteCommand.idleCheck(target))
             let receipt = try sender.send(text, deadline: deadline)
             return Result(team: view.destination.team.rawValue, conversation: view.destination.conversation.rawValue,

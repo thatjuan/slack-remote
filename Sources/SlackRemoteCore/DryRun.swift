@@ -10,6 +10,13 @@ public struct DryRun: Encodable {
         case reply(rootTs: String, text: String, broadcast: Bool)
         case react(ts: String, thread: String?)
         case upload(file: FileStaging.File, text: String?, thread: String?, broadcast: Bool)
+
+        var usesPrimaryComposer: Bool {
+            switch self {
+            case .draftSet, .draftClear, .send, .upload(_, _, nil, _): true
+            default: false
+            }
+        }
     }
 
     public enum ComposerStatus: String, Encodable { case empty, text, pending, unknown }
@@ -35,7 +42,12 @@ public struct DryRun: Encodable {
             try config?.requireWriteAllowed(to: destination)
         }
         try tree.refresh()
-        try Overlays.requireUnblocked(in: tree)
+        var verifiedPrimary: VerifiedView?
+        if operation.usesPrimaryComposer, !Overlays.open(in: tree).isEmpty {
+            verifiedPrimary = try SlackWindow.verifyPrimaryWrite(destination, in: tree, config: config)
+        } else {
+            try Overlays.requireUnblocked(in: tree)
+        }
         let client = try SlackWindow.currentWindow(in: tree)
         let atDestination = client.location.destination == destination
         let account = try Account.verify(team: destination.team, in: tree, config: config, access: access,
@@ -47,7 +59,7 @@ public struct DryRun: Encodable {
         if !atDestination || preference == .sidebar { plan.append("navigate via \(route.rawValue)") }
         plan.append("verify destination")
         if atDestination {
-            let view = try SlackWindow.verify(destination, in: tree)
+            let view = try verifiedPrimary ?? SlackWindow.verify(destination, in: tree)
             let scope: MessageScope?
             switch operation {
             case .reply(let rootTs, _, _):

@@ -25,7 +25,7 @@ struct Draft: ParsableCommand {
         func validate() throws { try target.validate(requireDestination: true) }
 
         func run() throws {
-            try WriteCommand.run("draft set", text: text, options: options, target: target,
+            try WriteCommand.run("draft set", text: text, options: options, target: target, primaryComposer: true,
                                  preview: dryRun ? .draftSet(text) : nil) { view, tree, route, deadline in
                 let composer = Composer(view: view, in: tree, requireIdle: WriteCommand.idleCheck(target))
                 let method = try composer.write(text, deadline: deadline)
@@ -54,6 +54,7 @@ struct Draft: ParsableCommand {
 
         func run() throws {
             try WriteCommand.run("draft clear", text: expectText, checkEmojiNames: false, options: options, target: target,
+                                 primaryComposer: true,
                                  preview: dryRun ? .draftClear(expectText) : nil) { view, tree, route, deadline in
                 let composer = Composer(view: view, in: tree, requireIdle: WriteCommand.idleCheck(target))
                 let cleared = try composer.clear(expecting: expectText, deadline: deadline)
@@ -86,21 +87,22 @@ enum WriteCommand {
 
     static func run<Output: Encodable>(
         _ command: String, text: String, allowBroadcast: Bool = false, checkEmojiNames: Bool = true,
-        options: CommandOptions, target: DestinationOptions, preview: DryRun.Operation?,
+        options: CommandOptions, target: DestinationOptions, primaryComposer: Bool = false, preview: DryRun.Operation?,
         work: (VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
     ) throws {
-        try run(command, options: options, target: target, preview: preview, validateInput: {
+        try run(command, options: options, target: target, primaryComposer: primaryComposer, preview: preview, validateInput: {
             try MessageText.validate(text, allowBroadcast: allowBroadcast, checkEmojiNames: checkEmojiNames)
         }, work: work)
     }
 
     static func run<Output: Encodable>(
         _ command: String, options: CommandOptions,
-        target: DestinationOptions, preview: DryRun.Operation?,
+        target: DestinationOptions, primaryComposer: Bool = false, preview: DryRun.Operation?,
         validateInput: () throws -> Void,
         work: (VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
     ) throws {
-        try runUsingApp(command, options: options, target: target, preview: preview, validateInput: validateInput) {
+        try runUsingApp(command, options: options, target: target, primaryComposer: primaryComposer,
+                        preview: preview, validateInput: validateInput) {
             _, _, view, tree, route, deadline in
             try work(view, tree, route, deadline)
         }
@@ -108,7 +110,7 @@ enum WriteCommand {
 
     static func runUsingApp<Output: Encodable>(
         _ command: String, options: CommandOptions,
-        target: DestinationOptions, preview: DryRun.Operation?,
+        target: DestinationOptions, primaryComposer: Bool, preview: DryRun.Operation?,
         validateInput: () throws -> Void,
         work: (SlackApp, Config?, VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
     ) throws {
@@ -119,7 +121,7 @@ enum WriteCommand {
         let outcome: Outcome
         do {
             try validateInput()
-            let (_, result) = try CommandSupport.withSession(options: options, prepare: {
+            let (_, result) = try CommandSupport.withSession(options: options, allowOverlays: primaryComposer, prepare: {
                 let config = try Config.load()
                 let destination = try target.requireDestination(using: config)
                 try config?.requireWriteAllowed(to: destination)
@@ -134,12 +136,30 @@ enum WriteCommand {
                             preference: target.route.preference, config: config, in: tree, deadline: deadline,
                             warn: slack.warn))
                     }
+                    let configuredSelfComposer = primaryComposer && config?.accounts.contains(where: {
+                        $0.team == destination.team && $0.selfDM == destination.conversation
+                    }) == true
+                    let startingView: VerifiedView?
+                    if configuredSelfComposer, !Overlays.open(in: tree).isEmpty {
+                        startingView = try SlackWindow.verifyPrimaryWrite(destination, in: tree, config: config)
+                    } else {
+                        try Overlays.requireUnblocked(in: tree)
+                        startingView = nil
+                    }
                     try idleCheck(target)()
-                    let navigation = try target.navigate(to: destination, app: slack, in: tree, deadline: deadline)
-                    let view = try SlackWindow.verify(destination, in: tree)
+                    let navigation = try target.navigate(to: destination, app: slack, forReading: configuredSelfComposer,
+                                                         in: tree, deadline: deadline)
+                    let view: VerifiedView
+                    if let startingView {
+                        view = try SlackWindow.reverifyWrite(startingView, in: tree)
+                    } else if configuredSelfComposer {
+                        view = try SlackWindow.verifyPrimaryWrite(destination, in: tree, config: config)
+                    } else {
+                        view = try SlackWindow.verify(destination, in: tree)
+                    }
                     _ = try Account.verify(team: destination.team, in: tree, config: config, access: .write,
                                            deadline: deadline, window: view.window, warn: slack.warn)
-                    let verified = try SlackWindow.verify(destination, in: tree)
+                    let verified = try SlackWindow.reverifyWrite(view, in: tree)
                     return .actual(try work(slack, config, verified, tree, navigation.route, deadline))
                 }
                 completedWork = result

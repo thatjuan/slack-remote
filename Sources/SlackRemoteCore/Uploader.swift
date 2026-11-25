@@ -54,22 +54,28 @@ public struct Uploader {
         var textAttempted = false
         var sendAttempted = false
         do {
-            let method: AttachMethod
-            do {
-                try panel.attach(staged, deadline: deadline, opening: {
-                    let current = try composer.freshView()
-                    _ = try requireEmpty(in: current)
-                    let button = try scope.node(in: current).one(Locators.attachButton)
-                    try composer.requireMutation(current, deadline: deadline)
-                    try? button.perform(.press)
-                }, openingFile: { openAttempted = true })
-                method = .filePanel
-            } catch is FilePanel.URLUnavailable {
-                guard let paste else {
-                    throw RemoteError.uiDrift(locator: "filePanelRowURL", found: 0)
-                }
+            func pasteStagedFile() throws -> AttachMethod {
+                guard let paste else { throw RemoteError.uiDrift(locator: "filePanelRowURL", found: 0) }
                 try pasteFile(staged, deadline: deadline, paste: paste, attempted: { openAttempted = true })
-                method = .filePaste
+                return .filePaste
+            }
+            let method: AttachMethod
+            if view.passiveSelfPreview != nil {
+                // Paste into the verified editor without opening a second popover.
+                method = try pasteStagedFile()
+            } else {
+                do {
+                    try panel.attach(staged, deadline: deadline, opening: {
+                        let current = try composer.freshView()
+                        _ = try requireEmpty(in: current)
+                        let button = try scope.node(in: current).one(Locators.attachButton)
+                        try composer.requireMutation(current, deadline: deadline)
+                        try? button.perform(.press)
+                    }, openingFile: { openAttempted = true })
+                    method = .filePanel
+                } catch is FilePanel.URLUnavailable {
+                    method = try pasteStagedFile()
+                }
             }
             try waitForPendingFile(name, deadline: deadline)
             if let text {
