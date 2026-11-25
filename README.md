@@ -11,7 +11,7 @@
 
 - The binary targets macOS 14 or later on Apple silicon and Intel.
 - Sign in to the Slack desktop app and keep it open and visible in an unlocked macOS GUI session.
-- Run `slack-remote doctor --grant` from the app that launches `slack-remote` to grant Accessibility access.
+- SlackRemote.app holds the Accessibility permission. Grant it once with `slack-remote doctor --grant`. Your terminal needs no permission when you use the helper.
 
 ## Install
 
@@ -19,9 +19,13 @@
 curl -fsSL https://raw.githubusercontent.com/thatjuan/slack-remote/main/scripts/get.sh | sh
 ```
 
-The script downloads the latest release, checks its SHA-256 and code signature, and installs the universal binary into `~/.local/bin`. Run the same command to upgrade. To install into `DIR/bin` instead, pipe it to `sh -s -- --prefix DIR`. If `~/.local/bin` is not on your `PATH`, the script prints the line to add to `~/.zshrc`. To uninstall, delete `~/.local/bin/slack-remote`.
+The script downloads the latest release, checks its SHA-256 and code signature, and installs the universal CLI into `~/.local/bin`. It puts SlackRemote.app in `~/Applications` and launches it. SlackRemote is a menu bar app with no Dock icon. It starts at login by default. The release uses a notarized Developer ID signature so the Accessibility grant survives upgrades.
 
-To install by hand, download `slack-remote-<version>-macos.zip` and its `.sha256` file from the [latest release](https://github.com/thatjuan/slack-remote/releases/latest), check it with `shasum -a 256 -c`, and copy the `slack-remote` binary onto your `PATH`.
+Run the same command to upgrade. Pipe it to `sh -s -- --prefix DIR` to put the CLI in `DIR/bin`. If the bin directory is missing from your `PATH`, the script prints the line to add to `~/.zshrc`.
+
+To install by hand, download `slack-remote-<version>-macos.zip` and its `.sha256` file, check the zip with `shasum -a 256 -c`, then extract it. Copy `slack-remote` onto your `PATH`, move SlackRemote.app into `~/Applications`, and open it. [Latest release](https://github.com/thatjuan/slack-remote/releases/latest)
+
+To uninstall, run `scripts/uninstall.sh` from a source checkout. Pass the same `--prefix DIR` if you used one during install. To remove the files by hand, turn off Open at Login in the SlackRemote menu, quit the app, and delete it and the CLI.
 
 ### Build from source
 
@@ -33,11 +37,18 @@ cd slack-remote &&
 scripts/install.sh
 ```
 
-The installer builds a release binary and puts it in `~/.local/bin`. Pass `--prefix DIR` to install into `DIR/bin`. To remove the binary, run `scripts/uninstall.sh` with the same prefix option.
+The installer builds and starts SlackRemote.app in `~/Applications` and installs the CLI into `~/.local/bin`. Pass `--prefix DIR` to put the CLI in `DIR/bin`. By default, the installer signs the app ad hoc and macOS asks for Accessibility access again after each rebuild.
+
+#### Sign your build
+
+1. Open **Keychain Access › Certificate Assistant › Create a Certificate…**. Name it `slack-remote local`, set **Identity Type** to **Self Signed Root** and **Certificate Type** to **Code Signing**, then create the certificate.
+2. Run `security find-identity -v -p codesigning` and check that the certificate is listed.
+3. Run `scripts/install.sh --sign "slack-remote local"`. If `codesign` asks for keychain access the first time, choose **Always Allow**.
+4. Run `slack-remote doctor --grant` once. Rebuilds signed with the same certificate keep the grant.
 
 ## First run
 
-Run `slack-remote doctor --grant` from the app that will launch the CLI, turn on its Accessibility switch when Settings opens, and resolve any failed checks. You can also grant access manually in **System Settings › Privacy & Security › Accessibility** (**Device Control and Data Access** on macOS 27) by enabling your terminal, editor or agent app. In each workspace you plan to write to, run `slack-remote whoami --save` to record the active account in your local config.
+Run `slack-remote doctor --grant`, turn on the switch for SlackRemote when Settings opens, and resolve any failed checks. You can also enable SlackRemote manually in **System Settings › Privacy & Security › Accessibility** (**Device Control and Data Access** on macOS 27). In each workspace you plan to write to, run `slack-remote whoami --save` to record the active account in your local config.
 
 To set up a named destination, open the conversation in Slack and run `slack-remote current`. Put the returned `team` and `conversation` IDs in `TEAM_ID` and `CONVERSATION_ID`, then save and use the alias.
 

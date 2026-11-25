@@ -3,6 +3,8 @@ import ServiceManagement
 import SlackRemoteCore
 
 final class StatusMenu: NSObject, NSMenuDelegate {
+    static let hasLaunchedKey = "hasLaunched"
+
     private let server: HelperServer
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let login = SMAppService.mainApp
@@ -17,10 +19,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         statusItem.menu = menu
 
         let defaults = UserDefaults.standard
-        let launchedKey = "hasLaunched"
-        if !defaults.bool(forKey: launchedKey) {
+        if !defaults.bool(forKey: Self.hasLaunchedKey) {
             if login.status == .notRegistered { setOpenAtLogin(true) }
-            defaults.set(true, forKey: launchedKey)
+            defaults.set(true, forKey: Self.hasLaunchedKey)
         }
     }
 
