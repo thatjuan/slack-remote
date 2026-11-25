@@ -61,14 +61,23 @@ struct SenderTests {
     @Test func blockingDialogPreventsPress() throws {
         let fixture = try fixture()
         let sender = fixture.sender {
-            fixture.webArea.children.append(FakeNode(role: "AXGroup", subrole: "AXApplicationDialog"))
+            fixture.webArea.children = [FakeNode(role: "AXGroup", domClasses: [Locators.modalContent])]
         }
         let error = #expect(throws: WriteFailure.self) {
             try sender.send(text, deadline: Date().addingTimeInterval(2))
         }
         #expect(error?.error.code == "ui_blocked")
-        #expect(error?.draftLeft == true)
+        #expect(error?.draftLeft == nil)
         #expect(fixture.send.performCalls.isEmpty)
+    }
+
+    @Test func threadPaneDoesNotBlockTheMainComposer() throws {
+        let fixture = try fixture()
+        fixture.webArea.children.append(FakeNode(role: "AXGroup", subrole: "AXApplicationDialog",
+                                                 domClasses: Locators.secondaryView.classes))
+        fixture.scriptPress(message: "example message")
+        _ = try fixture.sender().send(text, deadline: Date().addingTimeInterval(2))
+        #expect(fixture.send.performCalls == [.press])
     }
 
     @Test func unchangedComposerAfterPressReportsSendUnconfirmed() throws {

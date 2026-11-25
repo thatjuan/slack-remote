@@ -28,7 +28,6 @@ public struct Sender {
             try Composer.requireLiveDestination(before)
 
             let final = try composer.freshView()
-            try Composer.requireUnblocked(final)
             let controls = try composer.controls(in: final)
             guard try controls.state() == expected, controls.enabled == true else {
                 throw RemoteError.writeUnverified(draftLeft: true)

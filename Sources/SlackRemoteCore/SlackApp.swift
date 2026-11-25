@@ -8,8 +8,14 @@ public final class SlackApp {
     public static let testedVersionPrefixes = ["4.53."]
 
     public let version: String
+    private var commandWarnings: [String] = []
     public var warnings: [String] {
-        Self.testedVersionPrefixes.contains(where: version.hasPrefix) ? [] : ["untested_slack_version"]
+        let versionWarnings = Self.testedVersionPrefixes.contains(where: version.hasPrefix) ? [] : ["untested_slack_version"]
+        return versionWarnings + commandWarnings
+    }
+
+    public func warn(_ code: String) {
+        if !commandWarnings.contains(code) { commandWarnings.append(code) }
     }
 
     private let identity: ProcessIdentity
@@ -131,7 +137,7 @@ public final class SlackApp {
 
             var previousShape: [Int]?
             guard let counts = Poll.until(deadline, {
-                tree.refresh()
+                tree.reload()
                 let shape = tree.shape()
                 defer { previousShape = shape }
                 return shape == previousShape ? shape : nil
@@ -243,15 +249,22 @@ public final class SlackTree {
         windows = readWindows()
     }
 
-    public func refresh() {
+    func reload() {
         if let readWindows { windows = readWindows() }
+    }
+
+    public func refresh() throws {
+        reload()
+        guard !SlackWindow.clientWindows(in: self).isEmpty else { throw RemoteError.treeUnavailable }
     }
 
     func shape() -> [Int]? {
         var containsWebArea = false
         let counts = windows.map { window in
             let nodes = window.descendants()
-            if nodes.contains(where: Locators.webArea.matches) { containsWebArea = true }
+            if nodes.contains(where: {
+                Locators.webArea.matches($0) && ($0.string(.url).map(ClientLocation.parse) ?? .notClient) != .notClient
+            }) { containsWebArea = true }
             return nodes.count + 1
         }
         return containsWebArea ? counts : nil

@@ -31,10 +31,27 @@ public enum Locators {
     public static let webArea = Locator(name: "webArea", role: "AXWebArea")
     public static let sidebarRow = Locator(name: "sidebarRow", role: "AXRow", subrole: "AXOutlineRow",
                                            classes: ["p-channel_sidebar__static_list__item"])
+    public static let sidebarRowTarget = Locator(name: "sidebarRowTarget", role: "AXGroup",
+                                                  classes: ["p-channel_sidebar__channel"])
     public static let primaryView = Locator(name: "primaryView", role: "AXGroup",
                                              classes: ["p-view_contents--primary"])
+    public static let secondaryView = Locator(name: "secondaryView", role: "AXGroup",
+                                               classes: ["p-view_contents--secondary"])
     public static let sidebarRowSelected = "p-channel_sidebar__static_list__item--selected"
     public static let sidebarDraft = "p-channel_sidebar__channel--draft"
+
+    // Overlays and account
+    public static let modalContent = "ReactModal__Content"
+    public static let modalOverlay = Locator(name: "modalOverlay", role: "AXGroup", classes: ["ReactModal__Overlay"])
+    static let informationalTooltip = Locator(name: "informationalTooltip", role: "AXGroup",
+                                               subrole: "AXUserInterfaceTooltip", classes: ["c-popover__content"])
+    public static let selfDM = "p-channel_sidebar__channel--im-you"
+    public static let searchButton = Locator(name: "searchButton", role: "AXButton", classes: ["p-top_nav__search"])
+    static let searchModal = Locator(name: "searchModal", role: "AXGroup", classes: ["c-search_modal"])
+    public static let searchClear = Locator(name: "searchClear", role: "AXButton",
+                                             classes: ["c-search__input_box__clear"])
+    public static let selfFilterPrefix = "quick-filter-from-"
+    public static let selfFilter = Locator(name: "selfFilter", role: "AXCheckBox", idPrefix: selfFilterPrefix)
 
     // Messages
     // Slack's outer screen-reader list directly contains virtual message items or spacers.
@@ -42,6 +59,7 @@ public enum Locators {
                                              classes: ["sr-only"], requiredChild: messageItem.matches)
     public static let messageItem = Locator(name: "messageItem", role: "AXGroup",
                                              classes: ["c-virtual_list__item"], idPrefix: "message-list_")
+    public static let messageListBottomID = "message-list_bottomSpacer"
     public static let messageBody = Locator(name: "messageBody", role: "AXGroup", subrole: "AXDocument",
                                              classes: ["c-message_kit__hover"])
     public static let senderButton = Locator(name: "senderButton", role: "AXButton",

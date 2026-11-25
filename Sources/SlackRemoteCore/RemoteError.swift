@@ -22,6 +22,18 @@ public enum RemoteError: Error {
     case writeUnverified(draftLeft: Bool)
     case sendUnconfirmed
     case timeout
+    case notImplemented
+    case overlayLeftOpen
+    case messageNotRendered
+    case unsupportedDestination
+    case writeNotAllowed
+    case fileRejected
+    case reactionUnconfirmed
+    case uploadUnconfirmed
+    case partialResult
+    case accountMismatch
+    case accountUnverified
+    case configInvalid
 
     public var code: String {
         switch self {
@@ -48,21 +60,35 @@ public enum RemoteError: Error {
         case .writeUnverified: return "write_unverified"
         case .sendUnconfirmed: return "send_unconfirmed"
         case .timeout: return "timeout"
+        case .notImplemented: return "not_implemented"
+        case .overlayLeftOpen: return "overlay_left_open"
+        case .messageNotRendered: return "message_not_rendered"
+        case .unsupportedDestination: return "unsupported_destination"
+        case .writeNotAllowed: return "write_not_allowed"
+        case .fileRejected: return "file_rejected"
+        case .reactionUnconfirmed: return "reaction_unconfirmed"
+        case .uploadUnconfirmed: return "upload_unconfirmed"
+        case .partialResult: return "partial_result"
+        case .accountMismatch: return "account_mismatch"
+        case .accountUnverified: return "account_unverified"
+        case .configInvalid: return "config_invalid"
         }
     }
 
     public var exitStatus: Int32 {
         switch self {
-        case .internalError, .axFailure: return 1
+        case .internalError, .axFailure, .notImplemented: return 1
         case .noGUISession, .screenLocked, .accessibilityNotTrusted: return 10
         case .slackNotRunning, .ambiguousSlack, .slackWindowUnavailable, .slackNotReady, .treeUnavailable: return 11
-        case .uiDrift, .ambiguousWindow, .uiBlocked: return 12
-        case .destinationMismatch, .destinationUnreachable: return 13
+        case .uiDrift, .ambiguousWindow, .uiBlocked, .overlayLeftOpen: return 12
+        case .destinationMismatch, .destinationUnreachable, .messageNotRendered, .unsupportedDestination: return 13
         case .slackInUse, .busy: return 14
-        case .unsafeText, .draftConflict: return 15
+        case .unsafeText, .draftConflict, .writeNotAllowed, .fileRejected: return 15
         case .writeFailed, .writeUnverified: return 16
-        case .sendUnconfirmed: return 17
+        case .sendUnconfirmed, .reactionUnconfirmed, .uploadUnconfirmed: return 17
         case .timeout: return 18
+        case .partialResult: return 19
+        case .accountMismatch, .accountUnverified, .configInvalid: return 20
         }
     }
 
@@ -84,7 +110,7 @@ public enum RemoteError: Error {
         case .uiBlocked: return "A dialog is blocking the Slack window."
         case .destinationMismatch: return "Slack did not arrive at the requested conversation."
         case .destinationUnreachable:
-            return "The requested conversation is not rendered in the sidebar. For a DM, try supplying --user."
+            return "The requested conversation is not rendered in the sidebar."
         case .slackInUse: return "Slack is in the foreground and has recent user input. Use --interrupt to proceed."
         case .busy: return "Another slack-remote command is holding the lock."
         case .unsafeText: return "Slack remote refused the supplied text."
@@ -93,6 +119,18 @@ public enum RemoteError: Error {
         case .writeUnverified: return "Slack's composer change could not be verified."
         case .sendUnconfirmed: return "The message may have been sent. Check the conversation before retrying."
         case .timeout: return "The command deadline passed."
+        case .notImplemented: return "This command is not implemented yet."
+        case .overlayLeftOpen: return "Slack may still have a popup open. Check Slack before continuing."
+        case .messageNotRendered: return "Slack has not rendered the requested message."
+        case .unsupportedDestination: return "This command does not support the requested destination."
+        case .writeNotAllowed: return "The destination is outside the configured write allowlist."
+        case .fileRejected: return "Slack remote refused the supplied file."
+        case .reactionUnconfirmed: return "The reaction change could not be confirmed."
+        case .uploadUnconfirmed: return "The upload could not be confirmed."
+        case .partialResult: return "Paging stopped early. Pass --allow-partial to return the available items."
+        case .accountMismatch: return "Slack's signed-in account differs from the configured account."
+        case .accountUnverified: return "Slack's signed-in account could not be verified."
+        case .configInvalid: return "Slack remote could not read, validate or save its private configuration."
         }
     }
 

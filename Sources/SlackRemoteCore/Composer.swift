@@ -97,7 +97,6 @@ public struct Composer {
     public func write(_ text: String, deadline: Date) throws -> WriteMethod {
         let expected = MessageText.normalize(text)
         let initial = try freshView()
-        try Self.requireUnblocked(initial)
         let current = try controls(in: initial).state()
         try Self.requireLiveDestination(initial)
         if current == .text(expected) { return .existing }
@@ -138,7 +137,6 @@ public struct Composer {
     public func clear(expecting text: String, deadline: Date) throws -> Bool {
         let expected = ComposerState.text(MessageText.normalize(text))
         let initial = try freshView()
-        try Self.requireUnblocked(initial)
         let current = try controls(in: initial).state()
         try Self.requireLiveDestination(initial)
         if current == .empty { return false }
@@ -189,18 +187,12 @@ public struct Composer {
     }
 
     func freshView() throws -> VerifiedView {
-        guard let tree else { return view }
-        tree.refresh()
-        return try SlackWindow.verify(view.destination, in: tree)
-    }
-
-    static func requireUnblocked(_ view: VerifiedView) throws {
-        let webArea = try view.window.one(Locators.webArea)
-        if webArea.descendants().contains(where: {
-            $0.role == "AXSheet" || $0.subrole == "AXApplicationDialog" || $0.subrole == "AXApplicationAlertDialog"
-        }) {
-            throw RemoteError.uiBlocked
+        guard let tree else {
+            try Overlays.requireUnblocked(in: SlackTree(windows: [view.window]))
+            return view
         }
+        try tree.refresh()
+        return try SlackWindow.verify(view.destination, in: tree)
     }
 
     static func requireLiveDestination(_ view: VerifiedView) throws {
@@ -229,7 +221,6 @@ public struct Composer {
 
     private func matchingControls(expecting expected: ComposerState) throws -> (VerifiedView, Controls) {
         let fresh = try freshView()
-        try Self.requireUnblocked(fresh)
         let controls = try controls(in: fresh)
         let current = try controls.state()
         guard current == expected else { throw Self.conflict(current) }
@@ -250,7 +241,7 @@ public struct Composer {
         min(deadline, Date().addingTimeInterval(2))
     }
 
-    private static func conflict(_ state: ComposerState) -> RemoteError {
+    static func conflict(_ state: ComposerState) -> RemoteError {
         if case .text(let text) = state { return .draftConflict(existingLength: text.count) }
         return .draftConflict(existingLength: 0)
     }

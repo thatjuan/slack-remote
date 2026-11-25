@@ -12,6 +12,7 @@ struct Draft: ParsableCommand {
         @OptionGroup var options: CommandOptions
         @OptionGroup var target: DestinationOptions
         @Option(help: "Text to put in the composer.") var text: String
+        @Flag(help: "Show the plan without changing Slack.") var dryRun = false
 
         private struct Result: Encodable {
             let team: String
@@ -21,10 +22,11 @@ struct Draft: ParsableCommand {
             let length: Int
         }
 
-        func validate() throws { _ = try target.requireDestination() }
+        func validate() throws { try target.validate(requireDestination: true) }
 
         func run() throws {
-            try WriteCommand.run("draft set", text: text, options: options, target: target) { view, tree, route, deadline in
+            try WriteCommand.run("draft set", text: text, options: options, target: target,
+                                 preview: dryRun ? .draftSet(text) : nil) { view, tree, route, deadline in
                 let composer = Composer(view: view, in: tree, requireIdle: WriteCommand.idleCheck(target))
                 let method = try composer.write(text, deadline: deadline)
                 return Result(team: view.destination.team.rawValue, conversation: view.destination.conversation.rawValue,
@@ -39,6 +41,7 @@ struct Draft: ParsableCommand {
         @OptionGroup var options: CommandOptions
         @OptionGroup var target: DestinationOptions
         @Option(help: "Exact text of the draft to clear.") var expectText: String
+        @Flag(help: "Show the plan without changing Slack.") var dryRun = false
 
         private struct Result: Encodable {
             let team: String
@@ -47,10 +50,11 @@ struct Draft: ParsableCommand {
             let cleared: Bool
         }
 
-        func validate() throws { _ = try target.requireDestination() }
+        func validate() throws { try target.validate(requireDestination: true) }
 
         func run() throws {
-            try WriteCommand.run("draft clear", text: expectText, options: options, target: target) { view, tree, route, deadline in
+            try WriteCommand.run("draft clear", text: expectText, options: options, target: target,
+                                 preview: dryRun ? .draftClear(expectText) : nil) { view, tree, route, deadline in
                 let composer = Composer(view: view, in: tree, requireIdle: WriteCommand.idleCheck(target))
                 let cleared = try composer.clear(expecting: expectText, deadline: deadline)
                 return Result(team: view.destination.team.rawValue, conversation: view.destination.conversation.rawValue,
@@ -82,60 +86,64 @@ enum WriteCommand {
 
     static func run<Output: Encodable>(
         _ command: String, text: String, allowBroadcast: Bool = false, options: CommandOptions,
-        target: DestinationOptions,
+        target: DestinationOptions, preview: DryRun.Operation?,
         work: (VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
     ) throws {
-        let destination = try target.requireDestination()
-        let deadline = Date().addingTimeInterval(options.timeout)
-        var slackVersion: String?
-        var warnings: [String]?
-        var completedWork: Swift.Result<Output, any Error>?
-        let outcome: Swift.Result<Output, any Error>
+        typealias Outcome = Swift.Result<Previewable<Output>, any Error>
+        var app: SlackApp?
+        var completedWork: Outcome?
+        let outcome: Outcome
         do {
             try MessageText.validate(text, allowBroadcast: allowBroadcast)
-            try Environment.requireUnlocked(Environment.guiSession())
-            try Environment.requireAccessibilityTrust()
-            let running = try SlackApp.requireRunning()
-            try SlackApp.requireVisible(running)
-            let slack = try SlackApp(running: running)
-            slackVersion = slack.version
-            warnings = slack.warnings
-            try CommandLock.acquire(deadline: deadline)
-            outcome = try slack.withTree(deadline: deadline) { tree in
-                let result = Swift.Result {
-                    if options.debug { CommandSupport.debugTree(tree) }
+            let (_, result) = try CommandSupport.withSession(options: options, prepare: {
+                let config = try Config.load()
+                let destination = try target.requireDestination(using: config)
+                try config?.requireWriteAllowed(to: destination)
+                return (config, destination)
+            }) { slack, tree, deadline, prepared in
+                app = slack
+                let (config, destination) = prepared
+                let result = Outcome {
+                    if let preview {
+                        return .preview(try DryRun.preview(preview, destination: destination, user: target.user,
+                            preference: target.route.preference, config: config, in: tree, deadline: deadline,
+                            warn: slack.warn))
+                    }
                     try idleCheck(target)()
-                    let navigation = try Navigator(slackApp: slack).navigate(to: destination, user: target.user,
-                        interrupt: target.interrupt, in: tree, deadline: deadline)
+                    let navigation = try target.navigate(to: destination, app: slack, in: tree, deadline: deadline)
                     let view = try SlackWindow.verify(destination, in: tree)
-                    return try work(view, tree, navigation.route, deadline)
+                    _ = try Account.verify(team: destination.team, in: tree, config: config, access: .write,
+                                           deadline: deadline, window: view.window, warn: slack.warn)
+                    let verified = try SlackWindow.verify(destination, in: tree)
+                    return .actual(try work(verified, tree, navigation.route, deadline))
                 }
                 completedWork = result
                 return result
             }
+            outcome = result
         } catch {
             if let completedWork {
                 // Preserve the verified send outcome if restoring the AX tree fails afterward.
-                warnings?.append("tree_restore_failed")
+                app?.warn("tree_restore_failed")
                 outcome = completedWork
             } else {
                 outcome = .failure(error)
             }
         }
 
-        let envelope: Envelope<Output>
+        let envelope: Envelope<Previewable<Output>>
         let status: Int32
         switch outcome {
         case .success(let result):
-            envelope = .init(ok: true, command: command, slackVersion: slackVersion,
-                             warnings: warnings, result: result, error: nil)
+            envelope = .init(ok: true, command: command, slackVersion: app?.version,
+                             warnings: app?.warnings, result: result, error: nil)
             status = 0
         case .failure(let error):
             let failure = error as? WriteFailure
             let remote = failure?.error ?? CommandSupport.remoteError(error)
             let details = failure.map(\.details) ?? remote.details
-            envelope = .init(ok: false, command: command, slackVersion: slackVersion,
-                             warnings: warnings, result: nil,
+            envelope = .init(ok: false, command: command, slackVersion: app?.version,
+                             warnings: app?.warnings, result: nil,
                              error: .init(code: remote.code, message: remote.message, details: details))
             status = remote.exitStatus
         }

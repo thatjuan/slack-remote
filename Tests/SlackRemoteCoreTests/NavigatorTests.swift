@@ -43,14 +43,30 @@ struct NavigatorTests {
         #expect(links == [dm.userLink(user)])
     }
 
-    @Test func dmWithoutUserPressesTheSidebarConversationControl() throws {
+    @Test(arguments: ["D0CCCCCCC", "G0FFFFFFF"])
+    func allConversationKindsUseTheChannelLinkByDefault(_ id: String) throws {
+        let destination = Destination(team: team, conversation: ConversationID(id)!)
+        var window = SlackFixture.window()
+        let tree = SlackTree(refresh: { [window] })
+        var links: [URL] = []
+        let navigator = navigator { url in
+            links.append(url)
+            window = SlackFixture.window(conversation: id)
+        }
+        let result = try navigator.navigate(to: destination, user: nil, interrupt: false, in: tree,
+                                            deadline: Date().addingTimeInterval(2))
+        #expect(result.route == .deepLinkChannel)
+        #expect(links == [destination.channelLink])
+    }
+
+    @Test func forcedSidebarPressesTheInnerConversationControl() throws {
         var window = SlackFixture.window()
         let tree = SlackTree(refresh: { [window] })
         let row = try #require(window.all(Locators.sidebarRow).first { $0.domID == dm.conversation.rawValue } as? FakeNode)
         let control = try #require(row.children.first as? FakeNode)
         control.onPerform = { _ in window = SlackFixture.window(conversation: self.dm.conversation.rawValue) }
         let navigator = navigator { _ in Issue.record("Sidebar navigation opened a link") }
-        let result = try navigator.navigate(to: dm, user: nil, interrupt: false, in: tree,
+        let result = try navigator.navigate(to: dm, user: nil, interrupt: false, preference: .sidebar, in: tree,
                                             deadline: Date().addingTimeInterval(2))
         #expect(result.route == .sidebarRow)
         #expect(row.performCalls.isEmpty)
@@ -61,7 +77,8 @@ struct NavigatorTests {
         let tree = SlackTree(windows: [SlackFixture.window(sidebar: [channel.conversation.rawValue])])
         let navigator = navigator { _ in Issue.record("Missing row triggered a link") }
         let error = #expect(throws: RemoteError.self) {
-            try navigator.navigate(to: dm, user: nil, interrupt: false, in: tree, deadline: Date().addingTimeInterval(2))
+            try navigator.navigate(to: dm, user: nil, interrupt: false, preference: .sidebar,
+                                   in: tree, deadline: Date().addingTimeInterval(2))
         }
         #expect(error?.code == "destination_unreachable")
     }
@@ -74,7 +91,8 @@ struct NavigatorTests {
         row.children.append(extra)
         let navigator = navigator { _ in Issue.record("Ambiguous sidebar controls triggered a link") }
         let error = #expect(throws: RemoteError.self) {
-            try navigator.navigate(to: dm, user: nil, interrupt: false, in: SlackTree(windows: [window]),
+            try navigator.navigate(to: dm, user: nil, interrupt: false, preference: .sidebar,
+                                   in: SlackTree(windows: [window]),
                                    deadline: Date().addingTimeInterval(2))
         }
         #expect(error?.code == "ui_drift")
@@ -104,6 +122,22 @@ struct NavigatorTests {
         }
         #expect(error?.code == "destination_mismatch")
         #expect(links == [channel.channelLink])
+    }
+
+    @Test func reportsAnOverlayThatAppearedDuringNavigation() throws {
+        var window = SlackFixture.window(conversation: dm.conversation.rawValue)
+        let tree = SlackTree(refresh: { [window] })
+        let popup = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent])
+        let navigator = navigator { _ in
+            window = SlackFixture.window()
+            window.children.append(popup)
+        }
+        let error = #expect(throws: RemoteError.self) {
+            try navigator.navigate(to: channel, user: nil, interrupt: false, in: tree,
+                                   deadline: Date().addingTimeInterval(2))
+        }
+        #expect(error?.code == "overlay_left_open")
+        #expect(popup.performCalls.isEmpty)
     }
 
     @Test func recentInputWhileSlackIsFrontmostBlocksNavigation() {

@@ -7,11 +7,14 @@ final class FakeNode: UINode {
     var domID: String?
     var children: [any UINode]
     var attributes: [UIAttribute: UIValue]
+    var actionNames: [String] = []
+    var settableAttributes: Set<UIAttribute> = []
     var onSet: ((UIAttribute, UIValue) throws -> Void)?
     var onPerform: ((UIAction) throws -> Void)?
 
     private(set) var setCalls: [(attribute: UIAttribute, value: UIValue)] = []
     private(set) var performCalls: [UIAction] = []
+    private(set) var readCalls: [UIAttribute] = []
 
     init(role: String, subrole: String? = nil, domClasses: [String] = [], domID: String? = nil,
          children: [any UINode] = [], attributes: [UIAttribute: UIValue] = [:]) {
@@ -24,13 +27,19 @@ final class FakeNode: UINode {
     }
 
     func string(_ attribute: UIAttribute) -> String? {
+        readCalls.append(attribute)
         guard case .string(let text) = attributes[attribute] else { return nil }
         return text
     }
 
     func bool(_ attribute: UIAttribute) -> Bool? {
+        readCalls.append(attribute)
         guard case .bool(let flag) = attributes[attribute] else { return nil }
         return flag
+    }
+
+    func isSettable(_ attribute: UIAttribute) -> Bool {
+        settableAttributes.contains(attribute)
     }
 
     func set(_ attribute: UIAttribute, to value: UIValue) throws {

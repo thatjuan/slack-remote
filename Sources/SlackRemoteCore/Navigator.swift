@@ -14,6 +14,8 @@ public struct NavigationResult: Encodable {
 }
 
 public struct Navigator {
+    public enum RoutePreference: String, CaseIterable { case auto, sidebar }
+
     private struct FrontmostApp {
         let bundleID: String?
         let restore: () -> Bool
@@ -59,15 +61,25 @@ public struct Navigator {
         secondsSinceUserInput = Environment.secondsSinceUserInput
     }
 
+    public static func plannedRoute(to destination: Destination, user: UserID?,
+                                    preference: RoutePreference = .auto) -> NavigationResult.Route {
+        if preference == .sidebar { return .sidebarRow }
+        if destination.conversation.kind == .directMessage && user != nil { return .deepLinkUser }
+        return .deepLinkChannel
+    }
+
     public func navigate(to destination: Destination, user: UserID?, interrupt: Bool,
+                         preference: RoutePreference = .auto,
                          in tree: SlackTree, deadline: Date) throws -> NavigationResult {
         guard Date() < deadline else { throw RemoteError.timeout }
-        tree.refresh()
+        try tree.refresh()
+        try Overlays.requireUnblocked(in: tree)
         var lastLocation: ClientLocation
         do {
             _ = try SlackWindow.verify(destination, in: tree)
             guard Date() < deadline else { throw RemoteError.timeout }
-            return NavigationResult(route: .alreadyThere, focusRestored: false)
+            if preference == .auto { return NavigationResult(route: .alreadyThere, focusRestored: false) }
+            lastLocation = .conversation(destination, trailing: [])
         } catch let error as RemoteError {
             guard case .destinationMismatch(_, let actual) = error, actual.destination != destination else {
                 throw error
@@ -86,22 +98,23 @@ public struct Navigator {
             return previousFrontmost.restore()
         }
 
-        let route: NavigationResult.Route
-        switch (destination.conversation.kind, user) {
-        case (.channel, _):
+        var focusHandled = false
+        defer { if !focusHandled { _ = restoreFocus() } }
+        let route = Self.plannedRoute(to: destination, user: user, preference: preference)
+        switch route {
+        case .deepLinkChannel, .alreadyThere:
             try openLink(destination.channelLink)
-            route = .deepLinkChannel
-        case (.directMessage, let user?):
+        case .deepLinkUser:
+            guard let user else { throw RemoteError.internalError(operation: "plan_user_link") }
             try openLink(destination.userLink(user))
-            route = .deepLinkUser
-        default:
+        case .sidebarRow:
             try pressSidebarRow(for: destination, in: tree, deadline: deadline)
-            route = .sidebarRow
         }
 
         var previousShape: [Int]?
-        let settled: Bool? = Poll.until(deadline) {
-            tree.refresh()
+        let settled: Bool? = try Poll.until(deadline) {
+            try tree.refresh()
+            guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
             do {
                 _ = try SlackWindow.verify(destination, in: tree)
                 lastLocation = .conversation(destination, trailing: [])
@@ -115,12 +128,20 @@ public struct Navigator {
             }
         }
         let focusRestored = restoreFocus()
+        focusHandled = true
         guard settled == true else { throw RemoteError.destinationMismatch(expected: destination, actual: lastLocation) }
         return NavigationResult(route: route, focusRestored: focusRestored)
     }
 
     private func pressSidebarRow(for destination: Destination, in tree: SlackTree, deadline: Date) throws {
         let client = try SlackWindow.currentWindow(in: tree)
+        let control = try Self.requireSidebarTarget(for: destination, in: client)
+        guard Date() < deadline else { throw RemoteError.timeout }
+        try control.perform(.press)
+    }
+
+    @discardableResult
+    static func requireSidebarTarget(for destination: Destination, in client: ClientWindow) throws -> any UINode {
         _ = try client.window.one(Locators.webArea)
         guard client.location.team == destination.team else {
             throw RemoteError.destinationMismatch(expected: destination, actual: client.location)
@@ -130,13 +151,6 @@ public struct Navigator {
         guard rows.count == 1 else { throw RemoteError.uiDrift(locator: Locators.sidebarRow.name, found: rows.count) }
 
         // Slack exposes the row and its conversation control as separate AXPress targets.
-        let conversation = Locator(name: "sidebarConversation", role: "AXGroup", subrole: "AXApplicationGroup",
-                                   classes: ["p-channel_sidebar__channel"])
-        let controls = row.children.filter(conversation.matches)
-        guard controls.count == 1, let control = controls.first else {
-            throw RemoteError.uiDrift(locator: conversation.name, found: controls.count)
-        }
-        guard Date() < deadline else { throw RemoteError.timeout }
-        try control.perform(.press)
+        return try row.one(Locators.sidebarRowTarget)
     }
 }

@@ -12,6 +12,18 @@ public final class AXNode: UINode {
     private let childElements: [AXUIElement]
     public private(set) lazy var children: [any UINode] = childElements.map(AXNode.init)
 
+    public var actionNames: [String] {
+        var names: CFArray?
+        guard AXUIElementCopyActionNames(element, &names) == .success else { return [] }
+        return names as? [String] ?? []
+    }
+
+    public func isSettable(_ attribute: UIAttribute) -> Bool {
+        var settable = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(element, attribute.rawValue as CFString, &settable) == .success
+            && settable.boolValue
+    }
+
     public init(_ element: AXUIElement) {
         self.element = element
         let names = [kAXRoleAttribute, kAXSubroleAttribute, "AXDOMClassList", "AXDOMIdentifier", kAXChildrenAttribute]
