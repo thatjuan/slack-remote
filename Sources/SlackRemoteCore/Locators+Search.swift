@@ -1,6 +1,8 @@
 extension Locators {
     static let searchWrapper = Locator(name: "searchWrapper", role: "AXGroup", classes: ["c-search_modal__wrapper"])
     static let searchQuery = Locator(name: "searchQuery", role: "AXComboBox", classes: ["ql-editor"])
+    static let searchClose = Locator(name: "searchClose", role: "AXButton", classes: ["c-search__input_and_close__close"])
+    static let searchTopClear = Locator(name: "searchTopClear", role: "AXButton", classes: ["p-top_nav__search__clear"])
     static let searchQuerySuggestionClass = "c-search_autocomplete__suggestion_item--query"
     static let searchSuggestionSelected = "c-search_autocomplete__suggestion_item--pseudo-selected"
     static let searchFilterToken = "c-member_slug--search-filter"

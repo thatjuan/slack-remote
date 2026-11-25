@@ -162,7 +162,10 @@ public enum SearchModal {
     private static func current(in tree: SlackTree) throws -> (any UINode)? {
         try tree.refresh()
         let window = try SlackWindow.currentWindow(in: tree).window
-        let modals = window.all(Locators.searchModal)
+        let modals = window.descendants().filter { node in
+            Locators.searchModal.matches(node)
+                || (node.domClasses.contains(Locators.modalContent) && node.all(Locators.searchWrapper).count == 1)
+        }
         guard modals.count <= 1 else {
             throw RemoteError.uiDrift(locator: Locators.searchModal.name, found: modals.count)
         }
@@ -240,6 +243,10 @@ public enum SearchModal {
                 let clear = try (current(in: tree) ?? modal).all(Locators.searchClear)
                 if clear.count == 1 { try clear.first?.perform(.press) }
                 guard clear.count <= 1 else { throw RemoteError.overlayLeftOpen }
+                if let fresh = try current(in: tree) {
+                    let buttons = fresh.all(Locators.searchClose)
+                    if buttons.count == 1 { try? buttons.first?.perform(.press) }
+                }
                 if try current(in: tree) != nil {
                     let original = try SlackWindow.currentWindow(in: tree).location
                     var backdrop = try ownedBackdrop(in: tree)
@@ -267,9 +274,11 @@ public enum SearchModal {
 
     private static func ownedBackdrop(in tree: SlackTree) throws -> (any UINode)? {
         let window = try SlackWindow.currentWindow(in: tree).window
-        let backdrops = window.all(Locators.modalOverlay).filter {
+        let possible = window.all(Locators.modalOverlay).filter { $0.all(Locators.informationalTooltip).isEmpty }
+        let associated = possible.filter {
             $0.all(Locators.searchModal).count == 1 || $0.all(Locators.searchWrapper).count == 1
         }
+        let backdrops = associated.isEmpty && Overlays.open(in: tree) == [.modal] ? possible : associated
         return backdrops.count == 1 ? backdrops.first : nil
     }
 }

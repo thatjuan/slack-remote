@@ -223,7 +223,7 @@ public enum SearchResults {
         } else {
             throw mismatch(destination, in: tree)
         }
-        let opened: Opened? = try Poll.until(deadline) {
+        func arrival() throws -> Opened? {
             try tree.refresh()
             let client = try SlackWindow.currentWindow(in: tree)
             guard client.location.destination == destination, Overlays.open(in: tree).isEmpty,
@@ -244,8 +244,11 @@ public enum SearchResults {
             guard threadItems.count == 1 else { return nil }
             return Opened(team: team, conversation: identity.conversation, ts: identity.ts, inThread: true)
         }
-        guard let opened else { throw mismatch(destination, in: tree) }
-        try dismissScoped(in: tree, deadline: Date().addingTimeInterval(4))
+        guard try Poll.until(deadline, arrival) != nil else { throw mismatch(destination, in: tree) }
+        let cleanup = Date().addingTimeInterval(4)
+        try clearActiveQuery(in: tree, deadline: cleanup)
+        try dismissScoped(in: tree, deadline: cleanup)
+        guard let opened = try arrival() else { throw mismatch(destination, in: tree) }
         return opened
     }
 
@@ -262,6 +265,10 @@ public enum SearchResults {
         do {
             try tree.refresh()
             guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
+            let current = try SlackWindow.currentWindow(in: tree)
+            if isFullSearch(current.location) || !current.window.all(Locators.scopedSearchHeader).isEmpty {
+                try clearActiveQuery(in: tree, deadline: Date().addingTimeInterval(3))
+            }
             try dismissScoped(in: tree, deadline: Date().addingTimeInterval(4))
             _ = try navigator.navigate(to: start, user: nil, interrupt: true, in: tree,
                                        deadline: Date().addingTimeInterval(4))
@@ -446,6 +453,18 @@ public enum SearchResults {
         guard try Poll.until(deadline, {
             try tree.refresh()
             return try SlackWindow.currentWindow(in: tree).window.all(Locators.scopedSearchHeader).isEmpty ? true : nil
+        }) == true else { throw RemoteError.overlayLeftOpen }
+    }
+
+    private static func clearActiveQuery(in tree: SlackTree, deadline: Date) throws {
+        try tree.refresh()
+        let buttons = try SlackWindow.currentWindow(in: tree).window.all(Locators.searchTopClear)
+        guard buttons.count <= 1 else { throw RemoteError.uiDrift(locator: Locators.searchTopClear.name, found: buttons.count) }
+        guard let clear = buttons.first else { return }
+        try? clear.perform(.press)
+        guard try Poll.until(deadline, {
+            try tree.refresh()
+            return try SlackWindow.currentWindow(in: tree).window.all(Locators.searchTopClear).isEmpty ? true : nil
         }) == true else { throw RemoteError.overlayLeftOpen }
     }
 
