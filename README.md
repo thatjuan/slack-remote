@@ -15,40 +15,25 @@
 
 ## Install
 
-### Install from the ZIP
-
-Save `slack-remote-1.0.0-macos.zip` and `slack-remote-1.0.0-macos.zip.sha256` from the private item to the same folder. The ZIP contains the ad hoc signed universal binary, this README, and the command docs.
-
-In Terminal, change to that folder and run the block below. If the SHA-256 check fails, the install stops.
-
 ```sh
-(
-  shasum -a 256 -c slack-remote-1.0.0-macos.zip.sha256 &&
-  unpack_dir=$(mktemp -d) &&
-  trap 'rm -rf "$unpack_dir"' EXIT &&
-  unzip slack-remote-1.0.0-macos.zip slack-remote -d "$unpack_dir" &&
-  mkdir -p "$HOME/.local/bin" &&
-  install -m 755 "$unpack_dir/slack-remote" "$HOME/.local/bin/slack-remote"
-) &&
-export PATH="$HOME/.local/bin:$PATH" &&
-slack-remote --version
+curl -fsSL https://raw.githubusercontent.com/thatjuan/slack-remote/main/scripts/get.sh | sh
 ```
 
-Add the `export PATH` line to `~/.zshrc` if you want `slack-remote` on your `PATH` in future zsh sessions.
+The script downloads the latest release, checks its SHA-256 and code signature, and installs the universal binary into `~/.local/bin`. Run the same command to upgrade. To install into `DIR/bin` instead, pipe it to `sh -s -- --prefix DIR`. If `~/.local/bin` is not on your `PATH`, the script prints the line to add to `~/.zshrc`. To uninstall, delete `~/.local/bin/slack-remote`.
+
+To install by hand, download `slack-remote-<version>-macos.zip` and its `.sha256` file from the [latest release](https://github.com/thatjuan/slack-remote/releases/latest), check it with `shasum -a 256 -c`, and copy the `slack-remote` binary onto your `PATH`.
 
 ### Build from source
 
-Use an Xcode toolchain with Swift 6 or later. Clone the `slack-remote-v0.1` branch of the private repository and run the installer.
+Use an Xcode toolchain with Swift 6 or later.
 
 ```sh
-git clone --branch slack-remote-v0.1 git@github.com:thatjuan/slack-remote.git &&
+git clone https://github.com/thatjuan/slack-remote.git &&
 cd slack-remote &&
 scripts/install.sh
 ```
 
-After PR #5 merges, omit `--branch slack-remote-v0.1` from the clone command.
-
-The installer puts `slack-remote` in `~/.local/bin`. Run the `export PATH` and `slack-remote --version` lines above. Pass `--prefix DIR` to install into `DIR/bin`, then add that directory to `PATH`. To remove the binary, run `scripts/uninstall.sh` with the same prefix option.
+The installer builds a release binary and puts it in `~/.local/bin`. Pass `--prefix DIR` to install into `DIR/bin`. To remove the binary, run `scripts/uninstall.sh` with the same prefix option.
 
 ## First run
 
