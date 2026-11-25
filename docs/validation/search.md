@@ -54,6 +54,10 @@ Directory now checks for that header on return. It presses the scoped close cont
 
 The patched build passed the original sequence and kept notes clear after the short People run. The first follow-up search returned `ui_drift` with notes still clear. On retry, four scoped search, People and read cycles succeeded, alternating Messages and Files. Each People run returned to verified notes without a secondary pane, modal or sheet.
 
+## Positive self-DM search
+
+Two scoped Messages searches returned one exact self-DM hit each for the synthetic send and the upload caption. The send hit matched the receipt timestamp. Both searches verified the self filter and returned to `notes`. A scoped Files search returned `13 / destination_mismatch` and left its results pane in `self`. A locked check matched the destination and closed that pane through its stock search header. The final snapshot verified `notes` with an empty composer and zero secondary panes, modals or sheets. [Self-DM write validation](write.md#live-recovery-under-the-passive-preview)
+
 ## Remaining live validation in priority order
 
 Run these checks in an exclusive main-mac Slack session after upload validation. Use the existing verified notes and self-DM aliases and record only counts, status codes, and verification outcomes.
@@ -61,7 +65,7 @@ Run these checks in an exclusive main-mac Slack session after upload validation.
 | Priority | Fixture and check | Expected evidence |
 | --- | --- | --- |
 | 1 | Take the generated file name and unique search token from upload validation. Reuse three approved synthetic messages containing that token in notes. Search for it with `--in notes` and then with `--type files --in notes`. | The three messages and the uploaded file appear in their respective searches. Compare their structural IDs with those observed at seeding and verify return to the starting conversation. |
-| 2 | Use a distinct synthetic token in the verified self-DM. Search with the self alias, then repeat with `--open 0`. | The In toggle matches the saved account, and the exact self-DM message is rendered after Jump. |
+| 2 | Repeat a positive Messages search in the verified self-DM with `--open 0`. Retest scoped Files with the synthetic upload. | The exact self-DM message is rendered after Jump. The file result carries the expected filename and identifier, and the Files search restores the starting view. |
 | 3 | Search the DMs source for the self-DM token and the Canvases source for an approved synthetic canvas shared in notes. Search Channels for a known synthetic channel fixture at workspace scope. | Record positive results with structural IDs or explicit nulls. Leave any source pending until its fixture is available. |
 | 4 | Use a synthetic result set large enough to cross a client page boundary. Search within the designated conversation with small `--max-results` and `--max-pages` bounds, then repeat past the boundary. | Record whether the last-row action reveals another page, the true stop reason, ordering, duplication, and restoration. Report a stall or client-imposed limit if the end cannot be verified. |
 | 5 | Interrupt a notes search during a page transition once a multi-page fixture is available. | Exit 130, no results printed, and `doctor` plus an exact starting-conversation check succeed after cleanup. Record an explicit cleanup error if the client blocks restoration. |

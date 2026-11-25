@@ -43,3 +43,16 @@ The release build, all 49 tests, and `git diff --check` passed. The send fixture
 The isolated 1.0.0 install from `06b6094520c58ef597fbe96f60f663258d341384` passed all eight `doctor` checks on main-mac. In `notes`, `whoami` matched the private fixture's workspace, signed-in user, and self-DM. After opening `self`, a separate locked Accessibility snapshot matched the client URL, selected sidebar row, and signed-in self-DM marker. It found one primary message list, editor, and send control. The editor was blank, Send was disabled, and there were zero pending files or sidebar draft markers.
 
 Slack rendered one blocking attachment preview, with zero sheets or secondary panes. The preview exposed no dedicated close or cancel control. The run left it untouched and skipped draft set, conflict and exact clear, send, upload, and the corresponding positive self-scoped search. The CLI returned to the original `notes` view. A separate snapshot verified the destination, an empty composer, and zero blocking overlays, sheets, or secondary panes.
+
+## Live recovery under the passive preview
+
+The follow-up used stock Slack 4.53.292 and the same private fixture on main-mac. Reselecting the exact sidebar row preserved the blank composer and reopened the preview. The stock user link also opened a profile pane. Closing that pane through its header left the composer and preview intact. The independent Accessibility snapshots matched the signed-in self marker, workspace URL, and selected row. The primary editor reported focus. The preview and backdrop did not, and the preview exposed one link, no editable value, and no dedicated dismissal control.
+
+| Check | Observation |
+| --- | --- |
+| Guarded dry run | Returned `account: verified`, `atDestination: true` and `composer: empty`. The editor stayed blank with zero pending files. |
+| Draft | `draft set` returned `value` and the editor read back the exact synthetic text. Repeating it returned `existing`. Setting different text and clearing with the wrong text each returned `15 / draft_conflict`. The exact clear returned `cleared: true` and the composer was empty again. The preview stayed visible throughout. |
+| Send | The release from `29e67db54b7238e9422c5092991f11250049c918` returned `sent: true`. A separate CLI read found one matching message with the same timestamp. Slack closed the preview during the send and the composer was empty afterward. |
+| Upload | Started from the clear self-DM after the send. The `file_paste` receipt matched the one rendered attachment and synthetic caption. A fresh snapshot verified the empty composer. |
+
+Both write receipts matched independently rendered messages. The scoped Messages searches found the send and upload caption. The session ended in verified `notes` with an empty composer and no secondary panes, modals or sheets. [Search observations](search.md#positive-self-dm-search)
