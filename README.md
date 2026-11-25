@@ -1,4 +1,9 @@
-# slack-remote
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo-slack-remote-dark.svg">
+    <img alt="slack-remote" src="brand/logo-slack-remote-outlined.svg" width="420">
+  </picture>
+</p>
 
 `slack-remote` is a macOS command-line tool for reading and controlling the Slack desktop client. It uses Slack’s documented deep links and macOS Accessibility to navigate conversations, read rendered messages, search and send.
 
