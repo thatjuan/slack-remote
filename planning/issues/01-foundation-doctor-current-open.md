@@ -185,7 +185,7 @@ public enum ClientLocation: Equatable {
 
 Each id type has a failable `init?(_ raw: String)` that applies the regex. `ConversationID` exposes `kind`: `.channel` for `C`, `.directMessage` for `D`, `.group` for `G`.
 
-`parse` requires scheme `https`, host `app.slack.com` and a first path segment `client`. Worked examples, all with invented ids:
+`parse` requires scheme `https`, host `app.slack.com` and a first path segment `client`. Worked examples, all with invented ids. The second row only shows how trailing segments are kept; the real URL of an open thread has not been observed.
 
 | URL | Result |
 |---|---|
@@ -278,7 +278,10 @@ Slack is "in use" when it is the frontmost application and the last user input w
 
 ```swift
 public struct Navigator {
-    public init(openLink: @escaping (URL) throws -> Void, frontmostBundleID: @escaping () -> String?, ...)
+    public init(openLink: @escaping (URL) throws -> Void,
+                frontmostBundleID: @escaping () -> String?,
+                activate: @escaping (_ bundleID: String) -> Void,
+                secondsSinceUserInput: @escaping () -> Double)
     public func navigate(to destination: Destination, user: UserID?, interrupt: Bool,
                          in tree: SlackTree, deadline: Date) throws -> NavigationResult
 }
@@ -427,13 +430,15 @@ Allowed on any workspace, because they only read and never navigate:
 3. After each command, confirm the tree is off again: a second `doctor` run must report `enabled by this run`.
 4. Run `doctor` from an ssh shell into the same Mac and record the error code.
 5. Start two `current` commands at once and confirm both succeed in turn; start one with `--timeout 0.2` while another holds the lock and confirm `busy`.
+6. Press Ctrl-C during the settle wait of a `doctor` run, then run `doctor` again. It must report `enabled by this run`, and no `ax-enabled-*` marker may remain.
+7. Run `sleep 10; slack-remote current`, lock the screen within the ten seconds, and record the result after unlocking. Expected: `screen_locked`, exit status 10.
 
 Allowed only against the disposable destination. It is supplied through the environment variables `SLACK_REMOTE_TEST_TEAM` and `SLACK_REMOTE_TEST_CHANNEL`, and optionally `SLACK_REMOTE_TEST_DM` with `SLACK_REMOTE_TEST_USER`. If they are not set, do not run these steps, do not choose a destination yourself, and say so in the pull request.
 
-6. `open` to the test channel from another conversation. Record the route, whether Slack came to the front, and whether `focusRestored` was true.
-7. `open` to the test DM with `--user`, and again without `--user`. Record whether the user link landed on the expected `D…` id.
-8. `open` with a valid-looking conversation id that does not exist. Confirm `destination_mismatch` and exit status 13.
-9. With Slack minimised, and again with Slack hidden, run `current`. Record what happens. If the tree is unavailable in either state, the error must be `slack_window_unavailable` or `tree_unavailable`.
+8. `open` to the test channel from another conversation. Record the route, whether Slack came to the front, and whether `focusRestored` was true.
+9. `open` to the test DM with `--user`, and again without `--user`. Record whether the user link landed on the expected `D…` id.
+10. `open` with a valid-looking conversation id that does not exist. Confirm `destination_mismatch` and exit status 13.
+11. With Slack minimised, and again with Slack hidden, run `current`. Record what happens. If the tree is unavailable in either state, the error must be `slack_window_unavailable` or `tree_unavailable`.
 
 ## Acceptance criteria
 
