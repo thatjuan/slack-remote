@@ -21,7 +21,10 @@ struct SlackAppTests {
         var modeChanges: [Bool] = []
         let app = SlackApp(identity: identity, supportDirectory: directory, readWindows: { [SlackFixture.window()] },
                            setMode: { modeChanges.append($0) })
-        let mode = try app.withTree(deadline: Date().addingTimeInterval(2)) { $0.sessionInfo?.mode }
+        let mode = try app.withTree(deadline: Date().addingTimeInterval(2)) { tree in
+            #expect(tree.rebuildOwnedMode == nil)
+            return tree.sessionInfo?.mode
+        }
         #expect(mode == .alreadyPresent)
         #expect(modeChanges.isEmpty)
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
