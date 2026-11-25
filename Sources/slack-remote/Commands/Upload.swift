@@ -61,9 +61,15 @@ struct Upload: ParsableCommand {
         let preview: DryRun.Operation? = dryRun
             ? .upload(file: source.file, text: text, thread: thread, broadcast: alsoSendToChannel)
             : nil
-        try WriteCommand.run("upload", options: options, target: target, preview: preview, validateInput: {
+        try WriteCommand.runUsingApp("upload", options: options, target: target, preview: preview, validateInput: {
             if let text { try MessageText.validate(text, allowBroadcast: allowBroadcast) }
-        }) { view, tree, route, deadline in
+        }) { app, config, view, tree, route, deadline in
+            let account = { (window: any UINode) in
+                let verification = try Account.verify(team: view.destination.team, in: tree, config: config,
+                                                      access: .dryRunWrite, deadline: deadline, window: window)
+                if verification == .unverified { throw RemoteError.accountUnverified }
+            }
+            try account(view.window)
             let scope: MessageScope
             if let thread {
                 let pane = try ThreadView.open(view.destination, rootTs: thread, in: tree,
@@ -72,8 +78,11 @@ struct Upload: ParsableCommand {
             } else {
                 scope = .primary
             }
-            let uploader = Uploader(view: view, scope: scope, in: tree, requireIdle: idle)
-            let receipt = try uploader.upload(source, text: text, alsoSendToChannel: alsoSendToChannel, deadline: deadline)
+            let uploader = Uploader(view: view, scope: scope, in: tree, requireIdle: idle, requireAccount: account)
+            let receipt = try uploader.upload(source, text: text, alsoSendToChannel: alsoSendToChannel,
+                                              deadline: deadline, paste: {
+                try NativeMenu(slackApp: app).press(cmdChar: "V", modifiers: 0)
+            })
             return Result(team: view.destination.team, conversation: view.destination.conversation, thread: thread,
                           file: source.file, route: route, attachMethod: receipt.attachMethod, ts: receipt.ts)
         }

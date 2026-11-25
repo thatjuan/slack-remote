@@ -31,6 +31,20 @@ struct UploaderTests {
         }
     }
 
+    @Test func reportsWhenAFileCannotBeRemoved() throws {
+        let f = try UploadFixture()
+        f.pendingName = "different.txt"
+        f.remove.actionNames = []
+        do {
+            _ = try f.upload()
+            Issue.record("Expected write_unverified")
+        } catch let failure as WriteFailure {
+            #expect(failure.error.code == "write_unverified")
+            #expect(failure.pendingFileLeft == true)
+            #expect(f.composer.send.performCalls.isEmpty)
+        }
+    }
+
     @Test func finalConversationChangePreventsSend() throws {
         let f = try UploadFixture()
         var afterOpen = 0

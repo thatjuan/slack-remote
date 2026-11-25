@@ -48,6 +48,11 @@ final class UploadFixture {
         let menuItems = (0..<4).map {
             FakeNode(role: "AXMenuItem", domClasses: Locators.attachItem.classes, domID: "menu-8-\($0)")
         }
+        menuItems.last?.children = [
+            FakeNode(role: "AXGroup", domClasses: Locators.attachItemLabel.classes, children: [
+                FakeNode(role: "AXStaticText", attributes: [.value: .string("Upload from your computer")]),
+            ]),
+        ]
         let menu = FakeNode(role: "AXMenu", domClasses: Locators.attachMenu.classes, children: menuItems)
         popup.children = [menu]
         attach.onPerform = { [weak self] _ in
@@ -56,6 +61,7 @@ final class UploadFixture {
         }
         backdrop.onPerform = { [weak self] _ in self?.dismissMenu() }
         menuItems.last?.actionNames = [UIAction.press.rawValue]
+        remove.actionNames = [UIAction.press.rawValue]
         menuItems.last?.onPerform = { [weak self] _ in
             guard let self else { return }
             dismissMenu()
@@ -92,9 +98,9 @@ final class UploadFixture {
     }
 
     private func installPending() {
-        let label = FakeNode(role: "AXStaticText", domClasses: Locators.pendingFileName.classes,
-                             attributes: [.value: .string(pendingName ?? staged.lastPathComponent)])
-        let pending = FakeNode(role: "AXGroup", domClasses: Locators.pendingFile.classes, children: [label, remove])
+        let name = pendingName ?? staged.lastPathComponent
+        let pending = FakeNode(role: "AXGroup", domClasses: Locators.pendingFile.classes, children: [remove],
+                               attributes: [.title: .string(name), .description: .string(name)])
         scope.children.append(pending)
         composer.show(.pendingContent)
         remove.onPerform = { [weak self, weak pending] _ in
@@ -108,11 +114,8 @@ final class UploadFixture {
         scope.children.removeAll(where: Locators.pendingFile.matches)
         composer.show(.empty)
         let item = MessageFixtures.message(1, sections: text.map { [[MessageFixtures.text($0)]] } ?? [])
-        let attachment = FakeNode(role: "AXGroup", domClasses: [Locators.attachmentPrefix])
-        if let name {
-            attachment.children = [FakeNode(role: "AXStaticText", domClasses: Locators.sentFileName.classes,
-                                            attributes: [.value: .string(name)])]
-        }
+        let attributes: [UIAttribute: UIValue] = name.map { [.title: .string($0), .description: .string($0)] } ?? [:]
+        let attachment = FakeNode(role: "AXGroup", domClasses: Locators.sentFile.classes, attributes: attributes)
         (try? item.one(Locators.messageBody) as? FakeNode)?.children.append(attachment)
         if let thread {
             item.domID = VerifiedThread.itemPrefix(view.view.destination, rootTs: ThreadFixture.root) + ThreadFixture.reply

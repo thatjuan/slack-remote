@@ -6,21 +6,26 @@ struct PendingFile {
     }
 
     func name() throws -> String {
-        let label = try node.one(Locators.pendingFileName)
-        guard let value = label.string(.value), !value.isEmpty else {
-            throw RemoteError.uiDrift(locator: Locators.pendingFileName.name, found: 0)
+        let title = node.string(.title)
+        guard let title, !title.isEmpty,
+              node.string(.description)?.utf8.elementsEqual(title.utf8) != false else {
+            throw RemoteError.uiDrift(locator: "pendingFileName", found: 0)
         }
-        return value
+        return title
     }
 
-    static func require(_ name: String, in files: [PendingFile]) throws {
+    @discardableResult
+    static func require(_ name: String, in files: [PendingFile]) throws -> PendingFile {
         guard files.count == 1, let file = files.first, let observed = try? file.name(),
               observed.utf8.elementsEqual(name.utf8) else {
             throw RemoteError.writeUnverified(draftLeft: false)
         }
+        return file
     }
 
-    func remove() throws {
-        try node.one(Locators.removePendingFile).perform(.press)
+    func removeControl() -> (any UINode)? {
+        guard let button = try? node.one(Locators.removePendingFile),
+              button.actionNames.contains(UIAction.press.rawValue) else { return nil }
+        return button
     }
 }

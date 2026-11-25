@@ -100,6 +100,18 @@ enum WriteCommand {
         validateInput: () throws -> Void,
         work: (VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
     ) throws {
+        try runUsingApp(command, options: options, target: target, preview: preview, validateInput: validateInput) {
+            _, _, view, tree, route, deadline in
+            try work(view, tree, route, deadline)
+        }
+    }
+
+    static func runUsingApp<Output: Encodable>(
+        _ command: String, options: CommandOptions,
+        target: DestinationOptions, preview: DryRun.Operation?,
+        validateInput: () throws -> Void,
+        work: (SlackApp, Config?, VerifiedView, SlackTree, NavigationResult.Route, Date) throws -> Output
+    ) throws {
         typealias Outcome = Swift.Result<Previewable<Output>, any Error>
         var app: SlackApp?
         var sessionTree: SlackTree?
@@ -128,7 +140,7 @@ enum WriteCommand {
                     _ = try Account.verify(team: destination.team, in: tree, config: config, access: .write,
                                            deadline: deadline, window: view.window, warn: slack.warn)
                     let verified = try SlackWindow.verify(destination, in: tree)
-                    return .actual(try work(verified, tree, navigation.route, deadline))
+                    return .actual(try work(slack, config, verified, tree, navigation.route, deadline))
                 }
                 completedWork = result
                 return result
@@ -153,12 +165,14 @@ enum WriteCommand {
             status = 0
         case .failure(let error):
             let failure = error as? WriteFailure
-            let remote = failure?.error ?? CommandSupport.remoteError(error)
+            let interrupted = sessionTree?.interruptionRequested == true
+            let remote = failure?.error ?? (error as? RemoteError)
+                ?? (interrupted ? .interrupted : CommandSupport.remoteError(error))
             let details = failure.map(\.details) ?? remote.details
             envelope = .init(ok: false, command: command, slackVersion: app?.version,
                              warnings: app?.warnings, result: nil,
                              error: .init(code: remote.code, message: remote.message, details: details))
-            status = sessionTree?.interruptionRequested == true ? 130 : remote.exitStatus
+            status = interrupted ? RemoteError.interrupted.exitStatus : remote.exitStatus
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

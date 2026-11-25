@@ -1,9 +1,13 @@
+import AppKit
 import Foundation
 
 struct FilePanel {
+    struct URLUnavailable: Error {}
+
     let tree: SlackTree
     let destination: Destination
     let requireIdle: () throws -> Void
+    var requireAccount: (any UINode) throws -> Void = { _ in }
 
     /// The caller verified the scoped composer before handing off to the native sheet.
     func attach(_ staged: URL, deadline: Date, opening: () throws -> Void,
@@ -33,11 +37,16 @@ struct FilePanel {
     static func uploadItem(in modal: any UINode) throws -> any UINode {
         let menu = try modal.one(Locators.attachMenu)
         let items = menu.descendants().filter { $0.role == "AXMenuItem" }
-        guard items.count == 4, items.allSatisfy(Locators.attachItem.matches),
-              let first = items.first?.domID?.wholeMatch(of: #/menu-([0-9]+)-0/#),
-              items.enumerated().allSatisfy({ $0.element.domID == "menu-\(first.output.1)-\($0.offset)" }),
-              let item = items.last, item.actionNames.contains(UIAction.press.rawValue) else {
-            throw RemoteError.uiDrift(locator: "uploadMenuItem", found: items.count)
+        let candidates = items.filter { item in
+            guard Locators.attachItem.matches(item), let label = try? item.one(Locators.attachItemLabel) else {
+                return false
+            }
+            return label.descendants().contains {
+                $0.role == "AXStaticText" && $0.string(.value) == "Upload from your computer"
+            }
+        }
+        guard candidates.count == 1, let item = candidates.first, item.actionNames.contains(UIAction.press.rawValue) else {
+            throw RemoteError.uiDrift(locator: "uploadMenuItem", found: candidates.count)
         }
         return item
     }
@@ -50,7 +59,7 @@ struct FilePanel {
         if try row(for: directory, in: browser) == nil, try row(for: staged, in: browser) == nil {
             let sidebar = try initial.one(Locators.fileSidebar)
             guard let row = try row(for: downloads, in: sidebar) else {
-                throw RemoteError.uiDrift(locator: "downloadsRowURL", found: 0)
+                throw URLUnavailable()
             }
             try requireContext(deadline: deadline)
             try select(row, in: sidebar)
@@ -69,20 +78,14 @@ struct FilePanel {
         let target = try find([staged], deadline: deadline)
         try requireContext(deadline: deadline)
         try select(target.row, in: target.browser)
-        let open: (any UINode)? = try Poll.until(deadline) {
-            let sheet = try sheet()
-            let browser = try sheet.one(Locators.fileBrowser)
-            let selected = selectedRows(in: browser)
-            guard selected.count <= 1 else {
-                throw RemoteError.uiDrift(locator: "selectedFileURL", found: selected.count)
-            }
-            guard selected.count == 1, selected.first.map({ matches(staged, node: $0) }) == true else { return nil }
-            guard let control = sheet.node(.defaultButton), control.role == "AXButton" else {
-                throw RemoteError.uiDrift(locator: "filePanelOpen", found: 0)
-            }
-            return control.bool(.enabled) == true ? control : nil
+        guard try Poll.until(deadline, { try selectedOpenControl(for: staged) }) != nil else {
+            throw RemoteError.timeout
         }
-        guard let open else { throw RemoteError.timeout }
+        try requireContext(deadline: deadline)
+        try requireAccount(try SlackWindow.currentWindow(in: tree).window)
+        guard let open = try selectedOpenControl(for: staged) else {
+            throw RemoteError.uiDrift(locator: "selectedFileURL", found: 0)
+        }
         try requireContext(deadline: deadline)
         openingFile()
         try? open.perform(.press)
@@ -90,6 +93,18 @@ struct FilePanel {
             try tree.refresh()
             return try Overlays.onlySheet(in: tree) == nil ? true : nil
         }) == true else { throw RemoteError.timeout }
+    }
+
+    private func selectedOpenControl(for staged: URL) throws -> (any UINode)? {
+        let sheet = try sheet()
+        let browser = try sheet.one(Locators.fileBrowser)
+        let selected = selectedRows(in: browser)
+        guard selected.count <= 1 else {
+            throw RemoteError.uiDrift(locator: "selectedFileURL", found: selected.count)
+        }
+        guard let row = selected.first, matches(staged, node: row) else { return nil }
+        let control = try Overlays.sheetButton(.defaultButton, titled: "Open", in: sheet)
+        return control.bool(.enabled) == true ? control : nil
     }
 
     private func requireContext(deadline: Date) throws {
@@ -111,14 +126,14 @@ struct FilePanel {
     }
 
     private func find(_ urls: [URL], deadline: Date) throws -> (url: URL, row: any UINode, browser: any UINode) {
-        let match = try Poll.until(deadline) {
+        let match = try Poll.until(min(deadline, Date().addingTimeInterval(2))) {
             let browser = try sheet().one(Locators.fileBrowser)
             for url in urls {
                 if let row = try row(for: url, in: browser) { return (url, row, browser) }
             }
             return nil
         }
-        guard let match else { throw RemoteError.uiDrift(locator: "filePanelRowURL", found: 0) }
+        guard let match else { throw URLUnavailable() }
         return match
     }
 
@@ -130,10 +145,10 @@ struct FilePanel {
 
     private func matches(_ url: URL, node: any UINode) -> Bool {
         if let observed = node.url {
-            return observed.isFileURL && observed.host == url.host && observed.path == url.path
-                && observed.query == nil && observed.fragment == nil
+            return observed.isFileURL && observed.host == url.host && observed.path.utf8.elementsEqual(url.path.utf8)
+                && observed.query == nil && observed.fragment == nil && observed.user == nil && observed.port == nil
         }
-        return node.string(.filename) == url.path
+        return node.string(.filename)?.utf8.elementsEqual(url.path.utf8) == true
     }
 
     private func isRow(_ node: any UINode) -> Bool {
@@ -156,5 +171,57 @@ struct FilePanel {
         if let rows = container.nodes(.selectedRows) { return rows }
         if let children = container.nodes(.selectedChildren), children.allSatisfy(isRow) { return children }
         return container.descendants().filter { isRow($0) && $0.bool(.selected) == true }
+    }
+}
+
+/// Replaces the pasteboard only while an exact staged file URL is offered to Slack's native Paste action.
+enum FilePaste {
+    static func withURL<T>(_ url: URL, in board: NSPasteboard = .general,
+                           _ paste: (() throws -> Void) throws -> T) throws -> T {
+        let originalChange = board.changeCount
+        let original = try snapshot(board)
+        guard board.changeCount == originalChange else {
+            throw RemoteError.internalError(operation: "upload_pasteboard_changed")
+        }
+
+        let ownedChange = board.clearContents()
+        let result = Result {
+            guard board.changeCount == ownedChange else {
+                throw RemoteError.internalError(operation: "upload_pasteboard_changed")
+            }
+            let wrote = board.writeObjects([url as NSURL])
+            func requireOwnedURL() throws {
+                guard wrote, board.pasteboardItems?.count == 1,
+                      board.string(forType: .fileURL) == url.absoluteString,
+                      board.changeCount == ownedChange else {
+                    throw RemoteError.internalError(operation: "write_upload_pasteboard_url")
+                }
+            }
+            try requireOwnedURL()
+            return try paste(requireOwnedURL)
+        }
+        if board.changeCount == ownedChange {
+            let cleared = board.clearContents()
+            if !original.isEmpty, board.changeCount == cleared, !board.writeObjects(original) {
+                throw RemoteError.internalError(operation: "restore_upload_pasteboard")
+            }
+        }
+        return try result.get()
+    }
+
+    private static func snapshot(_ board: NSPasteboard) throws -> [NSPasteboardItem] {
+        guard let items = board.pasteboardItems ?? (board.types?.isEmpty == true ? [] : nil) else {
+            throw RemoteError.internalError(operation: "read_upload_pasteboard")
+        }
+        return try items.map { item in
+            let copy = NSPasteboardItem()
+            guard !item.types.isEmpty else { throw RemoteError.internalError(operation: "read_upload_pasteboard") }
+            for type in item.types {
+                guard let data = item.data(forType: type), copy.setData(data, forType: type) else {
+                    throw RemoteError.internalError(operation: "read_upload_pasteboard")
+                }
+            }
+            return copy
+        }
     }
 }

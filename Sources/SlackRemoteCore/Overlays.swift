@@ -126,9 +126,7 @@ public enum Overlays {
             do {
                 try tree.refresh()
                 guard let sheet = try onlySheet(in: tree) else { return }
-                guard let cancel = sheet.node(.cancelButton), cancel.role == "AXButton" else {
-                    throw RemoteError.overlayLeftOpen
-                }
+                let cancel = try sheetButton(.cancelButton, titled: "Cancel", in: sheet)
                 try? cancel.perform(.press)
                 let closed = try Poll.until(deadline) {
                     try tree.refresh()
@@ -139,6 +137,18 @@ public enum Overlays {
                 throw RemoteError.overlayLeftOpen
             }
         }
+    }
+
+    static func sheetButton(_ attribute: UIAttribute, titled title: String, in sheet: any UINode) throws -> any UINode {
+        if let button = sheet.node(attribute), button.role == "AXButton" { return button }
+        // The open panel on Slack 4.53.292 exposes titled controls below its split group.
+        let matches = sheet.descendants().filter { node in
+            node.role == "AXButton" && node.string(.title) == title
+        }
+        guard matches.count == 1, let button = matches.first else {
+            throw RemoteError.uiDrift(locator: attribute.rawValue, found: matches.count)
+        }
+        return button
     }
 
     static func kind(_ node: any UINode) -> OverlayKind? {

@@ -113,7 +113,7 @@ public struct DryRun: Encodable {
             if let state, state != .empty { throw Composer.conflict(state) }
             file = candidate
             if let rootTs { plan.append("open and verify thread \(rootTs)") }
-            plan += ["require an empty composer", "stage the file", "attach the staged file by URL"]
+            plan += ["require an empty composer", "stage the file", "attach the exact staged file URL"]
             if let text { plan.append("write text (\(text.count) characters)") }
             if rootTs != nil { plan.append(broadcast ? "verify broadcast enabled" : "verify broadcast disabled") }
             plan += ["final gate", "press send once", "confirm attachment", "remove staged copy"]

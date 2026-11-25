@@ -28,7 +28,7 @@ public struct Sender {
         let previous: String?
         do {
             previous = try newestTimestamp()
-            button = try sendControl(broadcast: alsoSendToChannel, deadline: deadline) { controls in
+            button = try sendControl(broadcast: alsoSendToChannel, deadline: deadline) { _, controls in
                 guard try controls.state() == expected, controls.pendingFiles.isEmpty else {
                     throw RemoteError.writeUnverified(draftLeft: true)
                 }
@@ -82,10 +82,10 @@ public struct Sender {
     }
 
     func sendControl(broadcast: Bool, deadline: Date,
-                     verify: (Composer.Controls) throws -> Void) throws -> any UINode {
+                     verify: (VerifiedView, Composer.Controls) throws -> Void) throws -> any UINode {
         func verifiedControls(in view: VerifiedView) throws -> Composer.Controls {
             let controls = try composer.controls(in: view)
-            try verify(controls)
+            try verify(view, controls)
             guard controls.enabled == true else { throw RemoteError.writeUnverified(draftLeft: true) }
             return controls
         }

@@ -20,7 +20,7 @@ public struct WriteFailure: Error {
 
     init(_ error: any Error, draftLeft: Bool?, pendingFileLeft: Bool? = nil) {
         self.error = (error as? WriteFailure)?.error ?? error as? RemoteError
-            ?? .internalError(operation: "mutate_composer")
+            ?? (error is SlackTree.Interruption ? .interrupted : .internalError(operation: "mutate_composer"))
         self.draftLeft = draftLeft
         self.pendingFileLeft = pendingFileLeft
     }
