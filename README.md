@@ -1,43 +1,67 @@
 # slack-remote
 
-`slack-remote` controls the stock Slack desktop client on macOS using Slack's documented deep links and macOS Accessibility.
+`slack-remote` is a macOS command-line tool for reading and controlling the Slack desktop client. It uses Slack’s documented deep links and macOS Accessibility to navigate conversations, read rendered messages, search and send.
 
-Build with `swift build -c release`. Run `.build/release/slack-remote doctor` inside the logged-in user's macOS session with the screen unlocked and Slack running and visible. Grant the app that launches the CLI access in **System Settings › Privacy & Security › Accessibility**.
+## Requirements
+
+- macOS 14 or later on Apple silicon or Intel
+- The Slack desktop app, running and visible in a signed-in, unlocked macOS session
+- Accessibility access for the app launching the CLI, under **System Settings › Privacy & Security › Accessibility**
+- Swift 6 or later to build from source
+
+## Install
+
+From a source checkout, run:
+
+```sh
+scripts/install.sh
+export PATH="$HOME/.local/bin:$PATH"
+slack-remote --version
+```
+
+Pass `--prefix DIR` to install to `DIR/bin`. Use `scripts/uninstall.sh` with the same prefix to remove the binary while keeping local configuration and support files. For a release archive, verify the companion checksum with `shasum -a 256 -c slack-remote-1.0.0-macos.zip.sha256`, then unzip and put the executable on your `PATH`. The archive contains an ad hoc signed universal binary.
+
+## First run
+
+Run `slack-remote doctor` from the app you plan to use for scripting and resolve any failed checks. In your Slack workspace, run `slack-remote whoami --save` to record the signed-in account. Open a conversation in Slack and run `slack-remote current` to get its team and conversation IDs. Save those IDs under a name you can pass to `--dest`:
+
+```sh
+slack-remote dest add notes --team "$TEAM_ID" --channel "$CONVERSATION_ID"
+slack-remote read --dest notes
+```
+
+Set `restrictWritesToDestinations` to `true` in `~/.config/slack-remote/config.json` to restrict writes to configured destinations. Keep the file private with mode `0600`.
 
 ## Commands
 
-| Command | Slack changes |
+| Command | Purpose |
 | --- | --- |
-| [`doctor`](docs/commands/doctor.md), [`current`](docs/commands/current.md), [`inspect`](docs/commands/inspect.md), [`dest`](docs/commands/dest.md), `read` without a destination, any `--dry-run` | None. `dest add` edits the local config. |
-| [`open`](docs/commands/open.md), [`read`](docs/commands/read.md) with a destination or `--history`, [`whoami`](docs/commands/whoami.md) | Conversation, scroll position, or a popup opened and closed. Slack marks a conversation as viewed when the tool opens it, which can clear unread markers. |
-| [`draft`](docs/commands/draft.md), [`send`](docs/commands/send.md) | Composer or conversation content. |
+| [`doctor`](docs/commands/doctor.md) | Check the local session and Slack prerequisites |
+| [`current`](docs/commands/current.md) | Report the view Slack is displaying |
+| [`whoami`](docs/commands/whoami.md) | Identify the signed-in account and optionally save it |
+| [`dest`](docs/commands/dest.md) | Save or list named destinations |
+| [`open`](docs/commands/open.md) | Open and verify a conversation |
+| [`read`](docs/commands/read.md) | Read rendered messages, history or a thread |
+| [`channels`](docs/commands/channels.md) | List sidebar or channel browser conversations |
+| [`members`](docs/commands/members.md) | List members of a channel or group |
+| [`people`](docs/commands/people.md) | List the workspace people directory |
+| [`search`](docs/commands/search.md) | Search Slack and optionally jump to a message |
+| [`draft`](docs/commands/draft.md) | Set or clear a draft after checking its content |
+| [`send`](docs/commands/send.md) | Send text to a verified conversation |
+| [`reply`](docs/commands/reply.md) | Send text in a verified thread |
+| [`react`](docs/commands/react.md) | Add an emoji reaction to a verified message |
+| [`upload`](docs/commands/upload.md) | Send one local file to a conversation or thread |
+| [`inspect`](docs/commands/inspect.md) | Print the Accessibility structure for diagnosis |
 
-Commands accept `--timeout <seconds>` (default 15) and `--debug` for aggregate diagnostics on stderr. Success is JSON on stdout. `inspect` prints plain text. Failures are JSON on stderr, and argument errors include usage. Other assistive tools that toggle Slack's Accessibility mode can interrupt a command with `tree_unavailable`. Rerun the command after the tree is available.
+See the [scripting reference](docs/scripting.md) for JSON, exit statuses and a shell example. The [release validation matrix](docs/validation/matrix.md) records tested workflows and open gaps.
 
-History has no verified conversation-start marker. It never reports `end_of_list`.
+## Limits
 
-## Config and account checks
-
-Use `whoami --save` to record the current workspace account in `~/.config/slack-remote/config.json`. The config uses mode `0600`. Set `SLACK_REMOTE_CONFIG` to use a separate private file. Use `dest add` to give a workspace and conversation pair a name, then address it with `--dest NAME`.
-
-For commands that take a destination, a saved account is checked after navigation. With a config present, writes require a verified account in the target workspace. With no config, writes report `no_account_configured`. Set `restrictWritesToDestinations` to `true` in the config to limit writes to the exact pairs saved by `dest add`.
-
-## Exit statuses
-
-| Status | Codes |
-| --- | --- |
-| `0` | Success |
-| `1` | `internal`, `ax_failure`, `not_implemented` |
-| `10` | `no_gui_session`, `screen_locked`, `accessibility_not_trusted` |
-| `11` | `slack_not_running`, `ambiguous_slack`, `slack_window_unavailable`, `slack_not_ready`, `tree_unavailable` |
-| `12` | `ui_drift`, `ambiguous_window`, `ui_blocked`, `overlay_left_open` |
-| `13` | `destination_mismatch`, `destination_unreachable`, `message_not_rendered`, `unsupported_destination` |
-| `14` | `slack_in_use`, `busy` |
-| `15` | `unsafe_text`, `draft_conflict`, `write_not_allowed`, `file_rejected` |
-| `16` | `write_failed`, `write_unverified` |
-| `17` | `send_unconfirmed`, `reaction_unconfirmed`, `upload_unconfirmed` |
-| `18` | `timeout` |
-| `19` | `partial_result` |
-| `20` | `account_mismatch`, `account_unverified`, `config_invalid` |
-| `64` | Argument error |
-| `130` | Interrupted during an Accessibility tree session |
+- The CLI sees what Slack renders. History scrolls through the client within the supplied bounds. Slack controls search ranking, results and excerpts. History reports an incomplete result when it cannot verify the start of the conversation. [History validation](docs/validation/v1-foundation.md)
+- Opening a conversation or thread marks it viewed as it would in the desktop app. Search can add terms to Slack’s recent searches.
+- The lock serializes commands against one Slack client. An assistive tool that also toggles Slack’s Accessibility mode can cause `tree_unavailable`.
+- Enterprise Grid, multiple Slack windows and non-English Slack are unvalidated. Core view locators use structure and are expected to work in other languages. The upload menu lookup uses the English label for Slack’s upload item. [Upload validation](docs/validation/upload.md)
+- The members command supports channel and group lists. A self-DM has no supported members view. [Listing validation](docs/validation/listing.md)
+- People and Channels search sources require workspace scope because Slack drops the conversation filter on those tabs. The DMs source does not support a channel scope. Search can filter a DM only for the saved self-DM, which Slack exposes as a verifiable quick filter. Jump requires a message result with a verifiable identity. [Search validation](docs/validation/search.md)
+- The native file picker sometimes omits paths from its Accessibility rows. Upload can use Slack’s native Paste command after it verifies composer focus. [Upload validation](docs/validation/upload.md)
+- Inline emoji whose shortcodes Slack omits are flagged as `emojiOmitted`. Reaction controls that do not expose a verifiable identity cause the command to stop. [Thread and reaction validation](docs/validation/threads-reactions.md)
