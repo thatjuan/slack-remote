@@ -41,6 +41,8 @@ cd slack-remote &&
 scripts/install.sh
 ```
 
+After PR #5 merges, omit `--branch slack-remote-v0.1` from the clone command.
+
 The installer puts `slack-remote` in `~/.local/bin`. Run the `export PATH` and `slack-remote --version` lines above. Pass `--prefix DIR` to install into `DIR/bin`, then add that directory to `PATH`. To remove the binary, run `scripts/uninstall.sh` with the same prefix option.
 
 ## First run
