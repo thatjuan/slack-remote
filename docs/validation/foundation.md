@@ -3,7 +3,7 @@
 Ran on main-mac with macOS 27.2.1, Xcode 27.2, and Slack 4.53.292.
 
 - `swift build -c release` passed.
-- `swift test` passed all 18 tests in four suites. The URL parser test covered all six examples.
+- `swift test` passed all 29 tests in five suites after the navigation and locator fixes. The URL parser test covered all six examples.
 - `git diff --check` passed.
 - Missing destination flags, a malformed conversation ID, and a zero timeout each exited with status `64`.
 
@@ -16,9 +16,11 @@ Ran on main-mac with macOS 27.2.1, Xcode 27.2, and Slack 4.53.292.
 | 5. Concurrency | Two overlapping `current` commands both exited `0` in turn. A third with `--timeout 0.2` exited `14` with `busy`. The follow-up `doctor` enabled the tree again. |
 | 6. Interrupt during settle | Sent `SIGINT` after the recovery marker appeared. `doctor` exited `130`, and zero recovery markers remained. The next `doctor` enabled the tree again and passed all eight checks. |
 | 7. Locked screen | Skipped. Locking the live Mac was outside the authorized checks. |
-| 8. Channel deep link and focus | Blocked. The designated channel could not be identified in the rendered sidebar or current view. A workspace-qualified channel link would supply the destination. |
-| 9. DM link and sidebar press | One sidebar row in the visible workspace carried Slack's signed-in self-DM marker. The first sidebar attempt hit `slack_in_use` (exit `14`). After Slack was idle, the attempt returned `destination_mismatch` (exit `13`). A subsequent read showed the self-DM was still outside the current view. The `--user` route needs the signed-in user's Slack profile link. |
+| 8. Channel deep link and focus | Blocked. The rendered sidebar and current view lacked the designated channel. Slack's local search field read back the exact query, but the suggestions exposed zero exact channel matches and zero validated conversation IDs. A workspace-qualified link would supply the destination. |
+| 9. DM link and sidebar press | One rendered row carried Slack's signed-in self-DM marker. The row-level `AXPress` failed destination verification. Its direct conversation control also exposed `AXPress`. Pressing that control returned `sidebar_row`, verified the exact workspace and conversation, and reported `focusRestored: false`. The `--user` route needs the signed-in user's Slack profile link. |
 | 10. Nonexistent conversation | Skipped. Live navigation authorization covers the two designated conversations. |
 | 11. Minimized and hidden Slack | Skipped. Changing live Slack visibility was outside the authorized checks. |
 
-After the sidebar attempt, `doctor` enabled the tree again and returned `ui_drift` (exit `12`). The actual view had 13 `messageList` matches, 12 of them inside rendered message items.
+The initial role-only message-list locator counted 13 lists in one view, with 12 nested inside rendered message items. The outer list had the `sr-only` class and held direct virtual message items. The stricter locator requires both features. The fixtures cover a nested look-alike and the rejection of two matching outer lists.
+
+After the search field was restored and its overlay dismissed, the release CLI confirmed the self-DM was current. `doctor` passed all eight checks with one `messageList` match, and zero recovery markers remained.
