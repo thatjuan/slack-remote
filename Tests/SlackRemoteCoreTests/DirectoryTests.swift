@@ -43,6 +43,65 @@ final class DirectoryTests: XCTestCase {
         _ = try SlackWindow.verify(DirectoryFixtures.destination, in: fixture.tree)
     }
 
+    func testDirectoryReturnClosesOnlyTheReopenedScopedSearch() throws {
+        let fixture = try ChannelBrowserFixture()
+        fixture.onReturn = { [unowned fixture] in
+            fixture.showSearchPane()
+            fixture.showUnrelatedPane()
+        }
+        try visitDirectory(fixture)
+
+        let restored = try SlackWindow.verify(DirectoryFixtures.destination, in: fixture.tree)
+        XCTAssertEqual(fixture.searchClose.performCalls, [.press])
+        XCTAssertTrue(restored.window.all(Locators.scopedSearchHeader).isEmpty)
+        XCTAssertEqual(restored.window.all(Locators.secondaryView).count, 1)
+        XCTAssertTrue(fixture.unrelatedPane.performCalls.isEmpty)
+    }
+
+    func testDirectoryReturnPreservesAnExistingScopedSearch() throws {
+        let fixture = try ChannelBrowserFixture()
+        fixture.showSearchPane()
+        fixture.onReturn = { [unowned fixture] in fixture.showSearchPane() }
+        try visitDirectory(fixture)
+
+        let restored = try SlackWindow.verify(DirectoryFixtures.destination, in: fixture.tree)
+        XCTAssertEqual(restored.window.all(Locators.scopedSearchHeader).count, 1)
+        XCTAssertTrue(fixture.searchClose.performCalls.isEmpty)
+    }
+
+    func testDirectoryReturnLeavesAnUnownedOrAmbiguousScopedSearchUntouched() throws {
+        enum Scenario: String, CaseIterable {
+            case paneBeforeReturn, duplicateHeader, userInput, differentAccount
+        }
+        for scenario in Scenario.allCases {
+            let fixture = try ChannelBrowserFixture()
+            fixture.onReturn = { [unowned fixture] in
+                fixture.showSearchPane()
+                if scenario == .duplicateHeader { fixture.showSearchPane() }
+                if scenario == .differentAccount { fixture.changeSelfDM() }
+            }
+            XCTAssertThrowsError(try visitDirectory(fixture, secondsSinceUserInput: {
+                scenario == .userInput ? 0 : .infinity
+            }, beforeReturn: {
+                if scenario == .paneBeforeReturn { fixture.showSearchPane() }
+            }), scenario.rawValue) {
+                XCTAssertEqual(($0 as? RemoteError)?.code, "overlay_left_open", scenario.rawValue)
+            }
+            XCTAssertTrue(fixture.searchClose.performCalls.isEmpty, scenario.rawValue)
+        }
+    }
+
+    private func visitDirectory(_ fixture: ChannelBrowserFixture,
+                                secondsSinceUserInput: () -> Double = { .infinity },
+                                beforeReturn: () -> Void = {}) throws {
+        try Directory.restoringConversation(in: fixture.tree, navigator: fixture.navigator(),
+                                            directoryTeam: DirectoryFixtures.destination.team,
+                                            secondsSinceUserInput: secondsSinceUserInput) {
+            try Directory.openFromSidebar(in: fixture.tree, deadline: Date().addingTimeInterval(1))
+            beforeReturn()
+        }
+    }
+
     func testNamesWithoutStructuredIDsAreUnsupported() {
         let id = "U0AAAAAAA"
         let identified = cell(infoID: Locators.directoryPersonIDPrefix + id)

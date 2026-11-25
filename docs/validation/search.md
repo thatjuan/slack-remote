@@ -46,6 +46,14 @@ Cleanup verifies that the Sources menu stays closed before reopening it to check
 
 The combined release build, 157 Swift Testing tests, 15 XCTest tests and `git diff --check` passed on main-mac.
 
+## Directory return
+
+On stock Slack 4.53.292, the `bf6755d` baseline passed scoped Messages and Files, workspace People, and both SIGINT checks. The first short People directory run returned to clear notes. In two later runs, a scoped search left notes clear and People reopened the stock scoped search pane while returning success. The next search returned exit 12 with `ui_blocked` both times. The reopened pane exposed no top-bar Clear control. A locked probe verified the notes account and closed the pane through its stock header.
+
+Directory now checks for that header on return. It presses the scoped close control only if the pane was absent on entry and before navigation back, the starting account, window and conversation still match, and no user input intervened. It leaves pre-existing panes alone and returns `overlay_left_open` when it cannot establish ownership of a pane left by the transition.
+
+The patched build passed the original sequence and kept notes clear after the short People run. The first follow-up search returned `ui_drift` with notes still clear. On retry, four scoped search, People and read cycles succeeded, alternating Messages and Files. Each People run returned to verified notes without a secondary pane, modal or sheet.
+
 ## Remaining live validation in priority order
 
 Run these checks in an exclusive main-mac Slack session after upload validation. Use the existing verified notes and self-DM aliases and record only counts, status codes, and verification outcomes.

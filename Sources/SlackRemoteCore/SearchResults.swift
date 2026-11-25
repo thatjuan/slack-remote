@@ -569,7 +569,16 @@ public enum SearchResults {
 
     private static func dismissScoped(in tree: SlackTree, deadline: Date) throws {
         try tree.refresh()
-        let header = try SlackWindow.currentWindow(in: tree).window.all(Locators.scopedSearchHeader)
+        let window = try SlackWindow.currentWindow(in: tree).window
+        try dismissScoped(in: window, deadline: deadline) {
+            try tree.refresh()
+            return try SlackWindow.currentWindow(in: tree).window
+        }
+    }
+
+    static func dismissScoped(in window: any UINode, deadline: Date,
+                              refreshWindow: () throws -> any UINode) throws {
+        let header = window.all(Locators.scopedSearchHeader)
         guard !header.isEmpty else { return }
         guard header.count == 1, let root = header.first else {
             throw RemoteError.uiDrift(locator: Locators.scopedSearchHeader.name, found: header.count)
@@ -581,8 +590,7 @@ public enum SearchResults {
         guard Date() < deadline else { throw RemoteError.overlayLeftOpen }
         try? close.perform(.press)
         guard try Poll.until(deadline, {
-            try tree.refresh()
-            return try SlackWindow.currentWindow(in: tree).window.all(Locators.scopedSearchHeader).isEmpty ? true : nil
+            try refreshWindow().all(Locators.scopedSearchHeader).isEmpty ? true : nil
         }) == true else { throw RemoteError.overlayLeftOpen }
     }
 
