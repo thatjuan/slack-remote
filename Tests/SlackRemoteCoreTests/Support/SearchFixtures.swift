@@ -207,7 +207,7 @@ final class SearchResultsFixture {
     }
 
     @discardableResult
-    func showSources() -> FakeNode {
+    func showSources(withBackdrop: Bool = true) -> FakeNode {
         root.children.removeAll { Locators.searchTab.matches($0) }
         let sources = FakeNode(role: "AXPopUpButton", domID: "search-filters-sources-filter")
         let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
@@ -222,11 +222,18 @@ final class SearchResultsFixture {
         menu.children = items
         popup.children = [menu]
         backdrop.children = [popup]
-        sources.onPerform = { [web] _ in web.children.append(backdrop) }
+        let surface = withBackdrop ? backdrop : popup
+        sources.onPerform = { [web] _ in
+            if web.children.contains(where: { $0 as AnyObject === surface }) {
+                web.children.removeAll { $0 as AnyObject === surface }
+            } else {
+                web.children.append(surface)
+            }
+        }
         backdrop.onPerform = { [web] _ in web.children.removeAll { $0 as AnyObject === backdrop } }
         for (index, item) in items.enumerated() {
-            item.onPerform = { [weak self, weak menu, weak backdrop] _ in
-                guard let self, let menu, let backdrop else { return }
+            item.onPerform = { [weak self, weak menu, weak surface] _ in
+                guard let self, let menu, let surface else { return }
                 for (slot, node) in menu.children.enumerated() {
                     guard let option = node as? FakeNode else { continue }
                     option.domClasses = Locators.searchSourceItem.classes
@@ -237,7 +244,7 @@ final class SearchResultsFixture {
                     list.children = [Self.row(id: "U0EEEEEEE", name: "Ada")]
                     root.children.removeAll { $0.domID == "filter-in" }
                 }
-                web.children.removeAll { $0 as AnyObject === backdrop }
+                web.children.removeAll { $0 as AnyObject === surface }
             }
         }
         root.children.append(sources)

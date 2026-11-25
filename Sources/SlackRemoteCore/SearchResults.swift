@@ -131,7 +131,7 @@ public enum SearchResults {
     }
 
     public static func read(type: String, team: TeamID, conversation: ConversationID? = nil, in tree: SlackTree,
-                            bounds: PageBounds, allowPartial: Bool) throws -> Snapshot {
+                            bounds: PageBounds, allowPartial: Bool, onReady: () -> Void = {}) throws -> Snapshot {
         guard var initial = try Poll.until(bounds.deadline, { try loaded(team: team, in: tree) }) else {
             throw RemoteError.timeout
         }
@@ -178,6 +178,7 @@ public enum SearchResults {
             throw UnsupportedType(available: available, requiresUnscopedSearch: true)
         }
         let sort = try readSort(in: ready, tree: tree, deadline: bounds.deadline)
+        onReady()
         var atEnd = false
         let page = try VirtualListPager.collect(direction: .towardEnd, bounds: bounds, rendered: {
             guard let view = try current(team: team, in: tree), view.isSelected(type), view.scope == ready.scope else {
@@ -363,8 +364,12 @@ public enum SearchResults {
         guard controls.count == 1, let control = controls.first else { return nil }
         if let value = control.string(.value), !value.isEmpty { return value }
         guard control.actionNames.contains(UIAction.press.rawValue), Date() < deadline else { return nil }
-        return try withMenu(in: tree, deadline: deadline,
-                            opening: { try control.perform(.press) }, fallback: { control }) { menu in
+        return try withMenu(in: tree, deadline: deadline, opening: { try control.perform(.press) },
+                            fallback: { window in
+            guard let root = try? window.one(Locators.searchResults) else { return nil }
+            let matches = root.descendants().filter { $0.domID == Locators.searchResultSortID }
+            return matches.count == 1 ? matches.first : nil
+        }) { menu in
             let chosen = menu.all(Locators.searchSourceItem).filter { $0.domClasses.contains(Locators.searchSourceChecked) }
             guard chosen.count == 1,
                   let id = chosen.first?.domID?.wholeMatch(of: #/menu-[0-9]+-([0-9]+)/#) else { return nil }
@@ -411,8 +416,10 @@ public enum SearchResults {
             throw RemoteError.timeout
         }
         let button = try view.root.one(Locators.searchSources)
-        return try withMenu(in: tree, deadline: deadline,
-                            opening: { try button.perform(.press) }, fallback: { button }) { menu in
+        return try withMenu(in: tree, deadline: deadline, opening: { try button.perform(.press) },
+                            fallback: { window in
+            try? window.one(Locators.searchResults).one(Locators.searchSources)
+        }) { menu in
             let items = menu.all(Locators.searchSourceItem)
             let indexes = items.compactMap { $0.domID?.wholeMatch(of: #/menu-([0-9]+)-([0-9]+)/#) }
             // The Sources menu uses generated IDs. Its six rows preceding the
@@ -427,9 +434,29 @@ public enum SearchResults {
         }
     }
 
-    private static func currentMenu(in tree: SlackTree) throws -> (node: any UINode, popup: any UINode)? {
+    private struct Menu {
+        let node: any UINode
+        let popup: any UINode
+        let client: ClientWindow
+
+        func matches(_ candidate: Menu) -> Bool {
+            guard client.location == candidate.client.location,
+                  SearchPopup(node: client.window).matches(candidate.client.window) else { return false }
+            if SearchPopup(node: popup).matches(candidate.popup) { return true }
+            // The popover can be absent from the backdrop's AX subtree. Its generated
+            // item IDs identify the menu across Accessibility snapshots.
+            let items = node.all(Locators.searchSourceItem)
+            let ids = items.compactMap(\.domID)
+            return !ids.isEmpty && ids.count == items.count
+                && ids.allSatisfy { $0.wholeMatch(of: #/menu-[0-9]+-[0-9]+/#) != nil }
+                && ids.map(Optional.some) == candidate.node.all(Locators.searchSourceItem).map(\.domID)
+        }
+    }
+
+    private static func currentMenu(in tree: SlackTree) throws -> Menu? {
         try tree.refresh()
-        let window = try SlackWindow.currentWindow(in: tree).window
+        let client = try SlackWindow.currentWindow(in: tree)
+        let window = client.window
         let matches = window.all(Locators.searchSourceMenu)
         guard matches.count <= 1 else { throw RemoteError.uiDrift(locator: Locators.searchSourceMenu.name, found: matches.count) }
         guard let menu = matches.first else { return nil }
@@ -437,20 +464,20 @@ public enum SearchResults {
             $0.domClasses.contains(Locators.modalContent) && $0.all(Locators.searchSourceMenu).count == 1
         }
         guard popups.count == 1, let popup = popups.first else { throw RemoteError.overlayLeftOpen }
-        return (menu, popup)
+        return Menu(node: menu, popup: popup, client: client)
     }
 
     private static func withMenu<T>(in tree: SlackTree, deadline: Date, opening: () throws -> Void,
-                                    fallback: () -> (any UINode)? = { nil },
+                                    fallback: (any UINode) -> (any UINode)? = { _ in nil },
                                     _ work: (any UINode) throws -> T) throws -> T {
         try tree.refresh()
         try Overlays.requireUnblocked(in: tree)
-        var owned: SearchPopup?
+        var owned: Menu?
         let outcome = Result {
             try tree.checkInterruption()
             try opening()
             guard let menu = try Poll.until(deadline, { try currentMenu(in: tree) }) else { throw RemoteError.timeout }
-            owned = SearchPopup(node: menu.popup)
+            owned = menu
             try tree.checkInterruption()
             return try work(menu.node)
         }
@@ -459,17 +486,19 @@ public enum SearchResults {
         return try outcome.get()
     }
 
-    private static func closeMenu(in tree: SlackTree, owned: SearchPopup?,
-                                  fallback: () -> (any UINode)?) throws {
+    private static func closeMenu(in tree: SlackTree, owned: Menu?,
+                                  fallback: (any UINode) -> (any UINode)?) throws {
         guard let visible = try currentMenu(in: tree) else { return }
         let deadline = tree.cleanupDeadline(after: 3)
-        guard let owned, owned.matches(visible.popup), Date() < deadline else { throw RemoteError.overlayLeftOpen }
-        let window = try SlackWindow.currentWindow(in: tree).window
+        guard let owned, owned.matches(visible), Date() < deadline else { throw RemoteError.overlayLeftOpen }
+        let window = visible.client.window
         let possible = window.all(Locators.modalOverlay).filter { $0.all(Locators.informationalTooltip).isEmpty }
-        let associated = possible.filter { $0.descendants().contains(where: owned.matches) }
-        let backdrops = associated.isEmpty && Overlays.open(in: tree) == [.modal] ? possible : associated
-        guard backdrops.count <= 1 else { throw RemoteError.overlayLeftOpen }
-        guard let close = backdrops.first ?? fallback() else { throw RemoteError.overlayLeftOpen }
+        let popup = SearchPopup(node: visible.popup)
+        let backdrops = possible.filter { $0.descendants().contains(where: popup.matches) }
+        guard backdrops.count <= 1, let close = backdrops.first
+                ?? (Overlays.open(in: tree) == [.modal] ? fallback(window) : nil) else {
+            throw RemoteError.overlayLeftOpen
+        }
         try? close.perform(.press)
         guard try Poll.until(deadline, {
             try currentMenu(in: tree) == nil && Overlays.open(in: tree).isEmpty ? true : nil

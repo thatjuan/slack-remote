@@ -65,10 +65,12 @@ struct SearchResultsTests {
 
     @Test func scopedFilesKeepTheirFilterAndStructuredResults() throws {
         let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
-        fixture.showSources()
+        let sources = fixture.showSources(withBackdrop: false)
         fixture.showConversationFilter()
         let snapshot = try fixture.read(type: "files", conversation: Fixture.result.conversation)
         #expect(snapshot.results.map(\.content) == [.file("F0DDDDDDD", name: "fixture.txt", conversation: nil)])
+        #expect(sources.performCalls == [.press, .press, .press])
+        #expect(Overlays.open(in: fixture.tree).isEmpty)
     }
 
     @Test func doesNotTreatDisplayedTextAsAnID() throws {
