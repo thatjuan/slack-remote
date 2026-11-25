@@ -103,9 +103,9 @@ public enum RemoteError: Error {
         case .screenLocked: return "The screen is locked."
         case .accessibilityNotTrusted(let host):
             if let host {
-                return "Turn on \(host.name) in System Settings › Privacy & Security › Accessibility, or run slack-remote doctor --grant."
+                return "Turn on \(host.name) in \(Environment.accessibilitySettingsPath), or run slack-remote doctor --grant."
             }
-            return "Turn on the app that runs this shell (your terminal, editor or agent app) in System Settings › Privacy & Security › Accessibility, or run slack-remote doctor --grant from it."
+            return "Turn on the app that runs this shell (your terminal, editor or agent app) in \(Environment.accessibilitySettingsPath), or run slack-remote doctor --grant from it."
         case .slackNotRunning: return "Slack is not running or has not finished launching."
         case .ambiguousSlack: return "More than one Slack process is running."
         case .slackWindowUnavailable: return "Slack is hidden or its client window is minimized."

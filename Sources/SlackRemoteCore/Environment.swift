@@ -6,6 +6,11 @@ public enum Environment {
     public static let accessibilitySettingsURL =
         URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
 
+    /// The Settings path that holds the Accessibility list; macOS 27 renamed the pane.
+    public static let accessibilitySettingsPath = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+        ? "System Settings › Privacy & Security › Device Control and Data Access"
+        : "System Settings › Privacy & Security › Accessibility"
+
     public struct GUISession {
         public let isLocked: Bool
     }
