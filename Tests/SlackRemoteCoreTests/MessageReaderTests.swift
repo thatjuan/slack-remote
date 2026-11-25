@@ -117,12 +117,23 @@ struct MessageReaderTests {
     @Test func rejectsMultipleMessageLists() throws {
         let window = SlackFixture.window()
         let primary = try #require(try window.one(Locators.primaryView) as? FakeNode)
-        primary.children.append(FakeNode(role: "AXList", subrole: "AXContentList"))
+        primary.children.append(FakeNode(role: "AXList", subrole: "AXContentList", domClasses: ["sr-only"],
+                                         children: [MessageFixtures.spacer()]))
         let view = try view(of: window)
         let error = #expect(throws: RemoteError.self) { try MessageReader.read(view, limit: nil) }
         #expect(error?.code == "ui_drift")
         guard case .uiDrift(let locator, let found)? = error else { return }
         #expect(locator == "messageList")
         #expect(found == 2)
+    }
+
+    @Test func readsConversationWithNestedContentList() throws {
+        let bullet = FakeNode(role: "AXListItem", children: [MessageFixtures.text("A nested bullet")])
+        let nested = FakeNode(role: "AXList", subrole: "AXContentList", domClasses: ["sr-only"], children: [bullet])
+        let message = MessageFixtures.message(0, sender: "Ada", sections: [[MessageFixtures.text("A message")]],
+                                              extras: [nested])
+
+        let result = try read([message])
+        #expect(result.messages.map(\.text) == ["A message"])
     }
 }

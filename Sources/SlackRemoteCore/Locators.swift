@@ -4,14 +4,17 @@ public struct Locator {
     public var subrole: String?
     public var classes: [String]
     public var idPrefix: String?
+    private let requiredChild: ((any UINode) -> Bool)?
 
     public init(name: String, role: String, subrole: String? = nil,
-                classes: [String] = [], idPrefix: String? = nil) {
+                classes: [String] = [], idPrefix: String? = nil,
+                requiredChild: ((any UINode) -> Bool)? = nil) {
         self.name = name
         self.role = role
         self.subrole = subrole
         self.classes = classes
         self.idPrefix = idPrefix
+        self.requiredChild = requiredChild
     }
 
     public func matches(_ node: any UINode) -> Bool {
@@ -19,6 +22,7 @@ public struct Locator {
             && (subrole == nil || node.subrole == subrole)
             && classes.allSatisfy(node.domClasses.contains)
             && (idPrefix.map { node.domID?.hasPrefix($0) == true } ?? true)
+            && (requiredChild.map { node.children.contains(where: $0) } ?? true)
     }
 }
 
@@ -33,7 +37,9 @@ public enum Locators {
     public static let sidebarDraft = "p-channel_sidebar__channel--draft"
 
     // Messages
-    public static let messageList = Locator(name: "messageList", role: "AXList", subrole: "AXContentList")
+    // Slack's outer screen-reader list directly contains virtual message items or spacers.
+    public static let messageList = Locator(name: "messageList", role: "AXList", subrole: "AXContentList",
+                                             classes: ["sr-only"], requiredChild: messageItem.matches)
     public static let messageItem = Locator(name: "messageItem", role: "AXGroup",
                                              classes: ["c-virtual_list__item"], idPrefix: "message-list_")
     public static let messageBody = Locator(name: "messageBody", role: "AXGroup", subrole: "AXDocument",
