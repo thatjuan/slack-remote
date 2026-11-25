@@ -24,6 +24,16 @@ swift build -c release
 
 Each command accepts `--timeout <seconds>` (default `15`) and `--debug` for aggregate diagnostics on stderr. Commands write successful JSON to stdout and failure JSON to stderr. ArgumentParser reports usage errors separately.
 
+### `read`
+
+`read` returns the current conversation's rendered messages in order from oldest to newest. Supply both `--team` and `--channel` to open and verify a conversation before reading it. The `--user` and `--interrupt` flags work as they do with `open`.
+
+The result's `scope: "rendered"` means Slack's message list supplies only what it has drawn, usually the messages on screen and a small buffer. Reading the current conversation leaves it on screen at the same scroll position. By default `read` returns the full rendered list. Use `--limit N` to keep the newest N entries, or `--limit 0` to return an empty message array.
+
+```sh
+.build/release/slack-remote read --limit 5
+```
+
 ## Exit statuses
 
 | Status | Meaning |
