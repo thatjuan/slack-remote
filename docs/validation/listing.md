@@ -27,3 +27,9 @@ The probes ran on main-mac against stock Slack 4.53.292. Each CLI or probe invoc
 The commands left the starting conversation selected. Follow-up inspections found zero blocking modals and zero native sheets.
 
 The release build, all 91 fixture tests, and `git diff --check` passed on main-mac.
+
+## Release regression retest
+
+The installed matrix returned `overlay_left_open` for both browser runs. Opening Browse channels closes its menu and replaces the conversation pane with the directory. The directory now verifies the menu dismissal before reading the browser and verifies the starting conversation before returning results.
+
+The release build on stock Slack 4.53.292 returned five unique channels in one snapshot with `--max-items 5` and `stopReason: limit`. With `--timeout 35`, it returned exit 19 and `partial_result` with 45 unique channels in nine snapshots, `complete: false` and `stopReason: stalled`. Both commands restored the exact notes workspace and conversation. The fixtures also cover a failed Browse press and verify that a replacement popup stays untouched.
