@@ -144,16 +144,14 @@ install_app() (
     quit_helper "$app_target" || exit 1
     check_app_target "$app_target" || exit 1
     if [ -e "$app_target" ]; then
-        # mv cannot replace a nonempty directory. Swap both bundles atomically.
-        /usr/bin/osascript -l JavaScript -e '
-            function run(argv) {
-                ObjC.bindFunction("renamex_np", ["int", ["char *", "char *", "unsigned int"]]);
-                const RENAME_SWAP = 2;
-                if ($.renamex_np(argv[0], argv[1], RENAME_SWAP) !== 0) {
-                    throw new Error("Could not replace " + argv[1]);
-                }
-            }
-        ' -- "$app_stage/SlackRemote.app" "$app_target" || exit 1
+        # mv cannot replace a nonempty directory, so move the old bundle aside first.
+        # osascript can hang on exit on macOS 27, so the installer avoids it.
+        /bin/mv -h "$app_target" "$app_stage/previous.app" || exit 1
+        if ! /bin/mv -hn "$app_stage/SlackRemote.app" "$app_dir/" || [ -e "$app_stage/SlackRemote.app" ]; then
+            /bin/mv -hn "$app_stage/previous.app" "$app_target"
+            printf 'Could not replace %s\n' "$app_target" >&2
+            exit 1
+        fi
     else
         /bin/mv -hn "$app_stage/SlackRemote.app" "$app_dir/" || exit 1
         if [ -e "$app_stage/SlackRemote.app" ]; then
