@@ -19,8 +19,8 @@ On main-mac, `swift build -c release`, `swift test` (47 tests), and `git diff --
 
 | Live step | Observation |
 | --- | --- |
-| Set, conflict, and clear | Pending. The exact read-back of the residual synthetic draft is unavailable. Keep the draft intact until the exact text can be established. |
-| Draft persistence and lock contention with `open` | Pending. The named channel did not render in the sidebar snapshot, so the second destination could not be verified. |
+| Set, conflict, and clear through the CLI | Skipped. The exact read-back of the residual synthetic draft is unavailable, and an empty verified composer has yet to be confirmed. The residual draft was left in place. |
+| Draft persistence and lock contention with `open` | Skipped. The named channel did not render in the sidebar snapshot, so the second destination could not be verified. |
 | Background Slack | Skipped. Slack was frontmost and the work did not change focus to create this condition. |
-| Preferences dialog and recent-input gate | Pending a separate desktop check. The dialog blocking behavior passed in fixtures. |
-| Send, multiline send, and send over an identical draft | Pending evidence that the verified destination has a uniquely identifiable outer rendered message list. The composer spike made zero send presses. |
+| Preferences dialog and recent-input gate | Skipped while the foundation follow-up used the desktop. The dialog blocking behavior passed in fixtures. |
+| Send, multiline send, and send over an identical draft | Skipped until the combined navigation and message-list changes can be verified in the test destination. The composer spike made zero send presses. |
