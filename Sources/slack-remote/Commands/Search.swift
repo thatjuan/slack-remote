@@ -120,6 +120,7 @@ struct Search: ParsableCommand {
         let requested = try conversationFilter(using: config)
         let searchTeam = team ?? requested?.team ?? start.team
         if let requested, requested.team != searchTeam { throw RemoteError.unsupportedDestination }
+        try SearchResults.requireSupportedConversation(requested?.conversation, for: type)
         let account = config?.accounts.first { $0.team == searchTeam }
         let anchor: Destination
         if let requested {

@@ -125,6 +125,11 @@ public enum SearchResults {
         }
     }
 
+    /// Slack removes an explicit In filter when these workspace sources are selected.
+    public static func requireSupportedConversation(_ conversation: ConversationID?, for type: String) throws {
+        if conversation != nil, isWorkspaceSource(type) { throw RemoteError.unsupportedDestination }
+    }
+
     public static func read(type: String, team: TeamID, conversation: ConversationID? = nil, in tree: SlackTree,
                             bounds: PageBounds, allowPartial: Bool) throws -> Snapshot {
         guard var initial = try Poll.until(bounds.deadline, { try loaded(team: team, in: tree) }) else {
@@ -343,11 +348,14 @@ public enum SearchResults {
 
     private static func requireSupportedScope(for type: String, available: [String], conversation: ConversationID?,
                                               requiresConversationScope: Bool) throws {
-        let workspaceSource = type == "people" || type == "channels"
         let channelDMSource = type == "dms" && conversation.map { $0.kind != .directMessage } == true
-        if (requiresConversationScope && workspaceSource) || channelDMSource {
+        if (requiresConversationScope && isWorkspaceSource(type)) || channelDMSource {
             throw UnsupportedType(available: available, requiresUnscopedSearch: true)
         }
+    }
+
+    private static func isWorkspaceSource(_ type: String) -> Bool {
+        type == "people" || type == "channels"
     }
 
     private static func readSort(in view: View, tree: SlackTree, deadline: Date) throws -> String? {
@@ -379,11 +387,12 @@ public enum SearchResults {
             try requireSupportedScope(for: type, available: available, conversation: conversation,
                                       requiresConversationScope: requiresConversationScope)
             guard Date() < deadline else { throw RemoteError.timeout }
-            if !desired.checked {
+            let changed = !desired.checked
+            if changed {
                 try tree.checkInterruption()
                 try desired.node.perform(.press)
             }
-            return (available, !desired.checked)
+            return (available, changed)
         }
         if selection.changed {
             try withSources(team: team, in: tree, deadline: deadline) { options in

@@ -20,7 +20,7 @@ slack-remote search --type people --query "Ada"
 slack-remote search --type channels --query "planning"
 ```
 
-Slack discards the conversation filter for these sources. The CLI rejects them with `unsupported_destination` when you supply a conversation flag and includes the visible source choices in the error details.
+Slack discards the conversation filter for these sources. A conversation flag returns `unsupported_destination` before the CLI opens search.
 
 Results follow Slack's order at the time of the search. Slack chooses the ranking and may truncate the rendered message excerpts. The CLI keeps result types separate. `complete: true` means the CLI reached the end of the results Slack listed for the selected type. The workspace may hold other matches.
 

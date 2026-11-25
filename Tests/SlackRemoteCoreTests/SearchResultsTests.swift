@@ -30,6 +30,20 @@ struct SearchResultsTests {
     }
 
     @Test(arguments: ["people", "channels"])
+    func explicitConversationScopeIsRejectedBeforeOpeningAWorkspaceSource(_ source: String) throws {
+        let error = #expect(throws: RemoteError.self) {
+            try SearchResults.requireSupportedConversation(Fixture.result.conversation, for: source)
+        }
+        #expect(error?.code == "unsupported_destination")
+        try SearchResults.requireSupportedConversation(nil, for: source)
+    }
+
+    @Test(arguments: ["messages", "files"])
+    func explicitConversationScopeIsSupportedForMessagesAndFiles(_ source: String) throws {
+        try SearchResults.requireSupportedConversation(Fixture.result.conversation, for: source)
+    }
+
+    @Test(arguments: ["people", "channels"])
     func workspaceSourcesLeaveAnActiveInFilterUntouched(_ source: String) throws {
         let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
         fixture.filesTab.domID = source
@@ -39,6 +53,22 @@ struct SearchResultsTests {
         #expect(error?.requiresUnscopedSearch == true)
         #expect(error?.available == ["messages", source])
         #expect(fixture.filesTab.performCalls.isEmpty)
+    }
+
+    @Test func workspacePeopleSearchReadsTheSelectedSource() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        let sources = fixture.showSources()
+        let snapshot = try fixture.read(type: "people")
+        #expect(snapshot.results.map(\.content) == [.person(UserID("U0EEEEEEE"), label: "Ada")])
+        #expect(sources.performCalls == [.press, .press])
+    }
+
+    @Test func scopedFilesKeepTheirFilterAndStructuredResults() throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        fixture.showSources()
+        fixture.showConversationFilter()
+        let snapshot = try fixture.read(type: "files", conversation: Fixture.result.conversation)
+        #expect(snapshot.results.map(\.content) == [.file("F0DDDDDDD", name: "fixture.txt", conversation: nil)])
     }
 
     @Test func doesNotTreatDisplayedTextAsAnID() throws {

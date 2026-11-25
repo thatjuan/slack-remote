@@ -206,6 +206,44 @@ final class SearchResultsFixture {
         root.children.append(FakeNode(role: "AXButton", domClasses: [Locators.searchFilterActive], domID: "filter-in"))
     }
 
+    @discardableResult
+    func showSources() -> FakeNode {
+        root.children.removeAll { Locators.searchTab.matches($0) }
+        let sources = FakeNode(role: "AXPopUpButton", domID: "search-filters-sources-filter")
+        let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
+        let popup = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], domID: "fixture-sources-popup")
+        let menu = FakeNode(role: "AXMenu", domClasses: Locators.searchSourceMenu.classes)
+        let titles = ["Messages", "DMs", "Files", "People", "Channels", "Canvases"]
+        let items = titles.enumerated().map { index, title in
+            FakeNode(role: "AXMenuItem",
+                     domClasses: Locators.searchSourceItem.classes + (index == 0 ? [Locators.searchSourceChecked] : []),
+                     domID: "menu-12-\(index)", attributes: [.title: .string(title)])
+        }
+        menu.children = items
+        popup.children = [menu]
+        backdrop.children = [popup]
+        sources.onPerform = { [web] _ in web.children.append(backdrop) }
+        backdrop.onPerform = { [web] _ in web.children.removeAll { $0 as AnyObject === backdrop } }
+        for (index, item) in items.enumerated() {
+            item.onPerform = { [weak self, weak menu, weak backdrop] _ in
+                guard let self, let menu, let backdrop else { return }
+                for (slot, node) in menu.children.enumerated() {
+                    guard let option = node as? FakeNode else { continue }
+                    option.domClasses = Locators.searchSourceItem.classes
+                        + (slot == index ? [Locators.searchSourceChecked] : [])
+                }
+                if index == 2 { list.children = [Self.row(id: "F0DDDDDDD", name: "fixture.txt")] }
+                if index == 3 {
+                    list.children = [Self.row(id: "U0EEEEEEE", name: "Ada")]
+                    root.children.removeAll { $0.domID == "filter-in" }
+                }
+                web.children.removeAll { $0 as AnyObject === backdrop }
+            }
+        }
+        root.children.append(sources)
+        return sources
+    }
+
     func navigator(restores: Bool = true) -> Navigator {
         Navigator(openLink: { [self] url in
             links.append(url)
@@ -214,8 +252,9 @@ final class SearchResultsFixture {
     }
 
     func read(type: String = "messages", maxItems: Int = 50, maxPages: Int = 20,
-              timeout: TimeInterval = 1, allowPartial: Bool = false) throws -> SearchResults.Snapshot {
-        try SearchResults.read(type: type, team: Self.team, in: tree,
+              timeout: TimeInterval = 1, allowPartial: Bool = false,
+              conversation: ConversationID? = nil) throws -> SearchResults.Snapshot {
+        try SearchResults.read(type: type, team: Self.team, conversation: conversation, in: tree,
                                bounds: .init(maxItems: maxItems, maxPages: maxPages,
                                              deadline: Date().addingTimeInterval(timeout)),
                                allowPartial: allowPartial)
