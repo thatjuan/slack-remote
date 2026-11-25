@@ -285,8 +285,10 @@ public enum SearchResults {
                     try clearActiveQuery(in: tree, deadline: tree.cleanupDeadline(after: 3))
                 }
                 try dismissScoped(in: tree, deadline: tree.cleanupDeadline(after: 4))
-                _ = try navigator.navigate(to: start, user: nil, interrupt: true, forReading: true, in: tree,
-                                           deadline: tree.cleanupDeadline(after: 4))
+                if try SlackWindow.currentWindow(in: tree).location.destination != start {
+                    _ = try navigator.navigate(to: start, user: nil, interrupt: true, forReading: true, in: tree,
+                                               deadline: tree.cleanupDeadline(after: 4))
+                }
                 let view = try SlackWindow.verifyForReading(start, in: tree)
                 guard view.window.all(Locators.scopedSearchHeader).isEmpty,
                       try SlackWindow.currentWindow(in: tree).location.destination == start else {
@@ -489,20 +491,40 @@ public enum SearchResults {
     private static func closeMenu(in tree: SlackTree, owned: Menu?,
                                   fallback: (any UINode) -> (any UINode)?) throws {
         guard let visible = try currentMenu(in: tree) else { return }
-        let deadline = tree.cleanupDeadline(after: 3)
-        guard let owned, owned.matches(visible), Date() < deadline else { throw RemoteError.overlayLeftOpen }
-        let window = visible.client.window
-        let possible = window.all(Locators.modalOverlay).filter { $0.all(Locators.informationalTooltip).isEmpty }
-        let popup = SearchPopup(node: visible.popup)
-        let backdrops = possible.filter { $0.descendants().contains(where: popup.matches) }
-        guard backdrops.count <= 1, let close = backdrops.first
-                ?? (Overlays.open(in: tree) == [.modal] ? fallback(window) : nil) else {
-            throw RemoteError.overlayLeftOpen
+        guard let owned else { throw RemoteError.overlayLeftOpen }
+        let deadline = tree.cleanupDeadline(after: 6)
+
+        func dismiss(_ visible: Menu) throws {
+            guard owned.matches(visible) else { throw RemoteError.overlayLeftOpen }
+            let window = visible.client.window
+            let popup = SearchPopup(node: visible.popup)
+            let backdrops = window.all(Locators.modalOverlay).filter { backdrop in
+                backdrop.all(Locators.informationalTooltip).isEmpty
+                    && backdrop.descendants().contains(where: popup.matches)
+            }
+            guard backdrops.count <= 1, let close = backdrops.first
+                    ?? (Overlays.open(in: tree) == [.modal] ? fallback(window) : nil),
+                  Date() < deadline else { throw RemoteError.overlayLeftOpen }
+            try? close.perform(.press)
         }
-        try? close.perform(.press)
-        guard try Poll.until(deadline, {
-            try currentMenu(in: tree) == nil && Overlays.open(in: tree).isEmpty ? true : nil
-        }) == true else { throw RemoteError.overlayLeftOpen }
+
+        func dismissed(until limit: Date) throws -> Bool {
+            try Poll.until(limit) {
+                if let visible = try currentMenu(in: tree) {
+                    guard owned.matches(visible) else { throw RemoteError.overlayLeftOpen }
+                    return nil as Bool?
+                }
+                return Overlays.open(in: tree).isEmpty ? true : nil
+            } == true
+        }
+
+        try dismiss(visible)
+        if try dismissed(until: min(deadline, Date().addingTimeInterval(1))) { return }
+        // If Slack is still rendering the menu during the first press, refresh
+        // the owned Accessibility session and reverify that same menu before retrying.
+        if let rebuild = tree.rebuildOwnedMode { try rebuild(deadline) }
+        if let visible = try currentMenu(in: tree) { try dismiss(visible) }
+        guard try dismissed(until: deadline) else { throw RemoteError.overlayLeftOpen }
     }
 
     private static func loaded(team: TeamID, in tree: SlackTree) throws -> View? {

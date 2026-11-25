@@ -283,13 +283,23 @@ public enum SearchModal {
 
     private static func close(in tree: SlackTree, owned: SearchPopup?, rollback: [String], clearQuery: Bool) throws {
         var fieldCleanupError: (any Error)?
+        var owned = owned
         do {
-            let cleanupDeadline = tree.cleanupDeadline(after: 4)
-            func ownedModal() throws -> (client: ClientWindow, node: any UINode)? {
+            let cleanupDeadline = Date().addingTimeInterval(6)
+            func ownedModal(rebuiltFrom original: ClientWindow? = nil) throws -> (client: ClientWindow, node: any UINode)? {
                 try tree.refresh()
                 let client = try SlackWindow.currentWindow(in: tree)
                 guard let modal = try modal(in: client.window, tree: tree) else { return nil }
-                guard owned?.matches(modal) == true else { throw RemoteError.overlayLeftOpen }
+                if owned?.matches(modal) != true {
+                    // Our own AX rebuild can replace its element references. Rebind
+                    // only the same unique DOM popup in the same window and location.
+                    guard let original, original.location == client.location,
+                          SearchPopup(node: original.window).matches(client.window),
+                          let id = owned?.node.domID, !id.isEmpty, modal.domID == id,
+                          client.window.descendants().filter({ $0.domID == id }).count == 1,
+                          modal.all(Locators.searchQuery).count == 1 else { throw RemoteError.overlayLeftOpen }
+                    owned = SearchPopup(node: modal)
+                }
                 return (client, modal)
             }
             func requireTime() throws {
@@ -315,37 +325,33 @@ public enum SearchModal {
                     visible = try ownedModal()
                 }
             }
-            if let owned, let original = visible?.client.location {
-                func dismissControl(in client: ClientWindow, popup: any UINode) -> (any UINode)? {
-                    let buttons = popup.all(Locators.searchClose)
-                    if buttons.count == 1 { return buttons.first }
-                    return ownedBackdrop(owned, in: client.window)
+            if let original = visible?.client {
+                func associatedBackdrop() -> (any UINode)? {
+                    guard let visible, let owned else { return nil }
+                    return ownedBackdrop(owned, in: visible.client.window)
                 }
-                var target = visible.flatMap { dismissControl(in: $0.client, popup: $0.node) }
-                if target == nil {
-                    // Slack can render the search field before it exposes the dismiss control.
+                var backdrop = associatedBackdrop()
+                if backdrop == nil {
+                    // Slack can expose the search field and close button before its
+                    // backdrop. The close button can acknowledge a press and leave search open.
                     _ = try Poll.until(min(cleanupDeadline, Date().addingTimeInterval(0.6))) { () -> Bool? in
                         visible = try ownedModal()
-                        guard let visible else { return true }
-                        target = dismissControl(in: visible.client, popup: visible.node)
-                        return target == nil ? nil : true
+                        guard visible != nil else { return true }
+                        backdrop = associatedBackdrop()
+                        return backdrop == nil ? nil : true
                     }
                 }
-                if target == nil, visible != nil, let rebuild = tree.rebuildOwnedMode {
+                if backdrop == nil, visible != nil, let rebuild = tree.rebuildOwnedMode {
                     try rebuild(cleanupDeadline)
-                    visible = try ownedModal()
-                    target = visible.flatMap { dismissControl(in: $0.client, popup: $0.node) }
+                    visible = try ownedModal(rebuiltFrom: original)
+                    backdrop = associatedBackdrop()
                 }
                 if let visible {
-                    guard visible.client.location == original, let target else { throw RemoteError.overlayLeftOpen }
+                    let buttons = visible.node.all(Locators.searchClose)
+                    let target = backdrop ?? (buttons.count == 1 ? buttons.first : nil)
+                    guard visible.client.location == original.location, let target else { throw RemoteError.overlayLeftOpen }
                     try requireTime()
                     try? target.perform(.press)
-                    if Locators.searchClose.matches(target), let stillOpen = try ownedModal(),
-                       stillOpen.client.location == original,
-                       let backdrop = ownedBackdrop(owned, in: stillOpen.client.window) {
-                        try requireTime()
-                        try? backdrop.perform(.press)
-                    }
                     guard try Poll.until(cleanupDeadline, {
                         try ownedModal() == nil ? true : nil
                     }) == true else { throw RemoteError.overlayLeftOpen }

@@ -77,9 +77,17 @@ final class SearchModalFixture {
         return (clear, backdrop)
     }
 
-    func showPopup(backdropReady: Bool) {
-        wrapper.children = [backdropReady ? backdrop : modal]
+    func showPopup(backdropReady: Bool, replaceAXNode: Bool = false) {
+        let node = replaceAXNode
+            ? FakeNode(role: modal.role, domClasses: modal.domClasses, domID: modal.domID, children: modal.children)
+            : modal
+        backdrop.children = [node]
+        wrapper.children = [backdropReady ? backdrop : node]
         web.children = [wrapper]
+    }
+
+    func addCloseControl(_ control: FakeNode) {
+        modal.children.append(control)
     }
 
     func run(query: String = "slack-remote test", filtered: Bool = true, in session: SlackTree? = nil,
@@ -207,7 +215,7 @@ final class SearchResultsFixture {
     }
 
     @discardableResult
-    func showSources(withBackdrop: Bool = true) -> FakeNode {
+    func showSources(withBackdrop: Bool = true, ignoreFirstDismissal: Bool = false) -> FakeNode {
         root.children.removeAll { Locators.searchTab.matches($0) }
         let sources = FakeNode(role: "AXPopUpButton", domID: "search-filters-sources-filter")
         let backdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
@@ -223,8 +231,13 @@ final class SearchResultsFixture {
         popup.children = [menu]
         backdrop.children = [popup]
         let surface = withBackdrop ? backdrop : popup
+        var ignoreDismissal = ignoreFirstDismissal
         sources.onPerform = { [web] _ in
             if web.children.contains(where: { $0 as AnyObject === surface }) {
+                if ignoreDismissal {
+                    ignoreDismissal = false
+                    return
+                }
                 web.children.removeAll { $0 as AnyObject === surface }
             } else {
                 web.children.append(surface)

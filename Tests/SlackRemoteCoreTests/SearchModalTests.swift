@@ -159,6 +159,31 @@ struct SearchModalTests {
         #expect(try SlackWindow.currentWindow(in: tree).location.destination == fixture.destination)
     }
 
+    @Test func interruptionRebuildsTheOwnedTreeWhenSlackExposesOnlyTheCloseButton() throws {
+        let fixture = try SearchModalFixture()
+        let close = FakeNode(role: "AXButton", domClasses: Locators.searchClose.classes)
+        fixture.addCloseControl(close)
+        fixture.search.onPerform = { _ in fixture.showPopup(backdropReady: false) }
+        var rebuilds = 0
+        fixture.tree.rebuildOwnedMode = { _ in
+            rebuilds += 1
+            fixture.showPopup(backdropReady: true, replaceAXNode: true)
+        }
+        let navigator = Navigator(openLink: { _ in Issue.record("Search navigated away from its verified start") },
+                                  frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
+
+        #expect(throws: SlackTree.Interruption.self) {
+            try SearchResults.restoring(start: fixture.destination, in: fixture.tree, navigator: navigator,
+                                        keepOnSuccess: false) {
+                try fixture.run(onOpen: { #expect(fixture.tree.requestInterruption()) })
+            }
+        }
+        #expect(rebuilds == 1)
+        #expect(close.performCalls.isEmpty)
+        #expect(fixture.backdrop.performCalls == [.press])
+        #expect(Overlays.open(in: fixture.tree).isEmpty)
+    }
+
     @Test func interruptionStillClosesThePopupWhenClearingTheFieldFails() throws {
         let fixture = try SearchModalFixture()
         fixture.didWriteQuery = { #expect(fixture.tree.requestInterruption()) }
