@@ -25,4 +25,16 @@ The live checks used stock Slack 4.53.292 on main-mac with the conversation filt
 | Unknown type | Exit 13 with the visible source choices in the error details. |
 | Ctrl-C after modal open | Exit 130 and an explicit `overlay_left_open` error. A separate, locked cleanup pressed the owned backdrop and verified the restored conversation. |
 
-Nonempty live results for Files and other sources, a self-DM search, and multi-page live results remain unverified. The release build, all 94 fixture tests, and the diff check passed.
+The release build, all 94 fixture tests, and the diff check passed for the live run above. The cancellation follow-up verified cleanup before Accessibility mode restoration, a replacement popup left untouched, and restoration when interrupted during paging. A fixture process also received an actual SIGINT before submission and during paging. The updated signal path awaits a live retest.
+
+## Remaining live validation in priority order
+
+Run these checks in an exclusive main-mac Slack session after upload validation. Use the existing verified notes and self-DM aliases and record only counts, status codes, and verification outcomes.
+
+| Priority | Fixture and check | Expected evidence |
+| --- | --- | --- |
+| 1 | Take the generated file name and unique search token from upload validation. Reuse three approved synthetic messages containing that token in notes. Search for it with `--in notes` and then with `--type files --in notes`. | The three messages and the uploaded file appear in their respective searches. Compare their structural IDs with those observed at seeding and verify return to the starting conversation. |
+| 2 | Use a distinct synthetic token in the verified self-DM. Search with the self alias, then repeat with `--open 0`. | The In toggle matches the saved account, and the exact self-DM message is rendered after Jump. |
+| 3 | Search the DMs source for the self-DM token and the Canvases source for an approved synthetic canvas shared in notes. Search People and Channels for known synthetic person and channel fixtures at workspace scope. | Record positive results with structural IDs or explicit nulls. Confirm that People and Channels with a conversation flag still fail without returning results. Leave any source pending until its fixture is available. |
+| 4 | Use a synthetic result set large enough to cross a client page boundary. Search within the designated conversation with small `--max-results` and `--max-pages` bounds, then repeat past the boundary. | Record whether the last-row action reveals another page, the true stop reason, ordering, duplication, and restoration. Report a stall or client-imposed limit if the end cannot be verified. |
+| 5 | Interrupt a notes search before submission and again while reading its results. | Exit 130, no results printed, and `doctor` plus an exact starting-conversation check succeed after cleanup. Record an explicit cleanup error if the client blocks restoration. |
