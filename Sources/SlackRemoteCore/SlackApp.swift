@@ -135,16 +135,22 @@ public final class SlackApp {
                 try setMode(true)
             }
 
-            var previousShape: [Int]?
-            guard let counts = Poll.until(deadline, {
-                tree.reload()
-                let shape = tree.shape()
-                defer { previousShape = shape }
-                return shape == previousShape ? shape : nil
-            }) else { throw RemoteError.treeUnavailable }
+            let counts = try tree.settle(until: deadline)
 
             tree.sessionInfo = .init(mode: recovered ? .recovered : (treeWasPresent ? .alreadyPresent : .enabled),
                                      elapsed: Date().timeIntervalSince(start), nodeCount: counts.reduce(0, +))
+            if needsRestore {
+                // Keep the recovery marker across both writes. We only rebuild a mode this session owns.
+                tree.rebuildOwnedMode = { [weak tree] deadline in
+                    guard let tree, Date() < deadline else { throw RemoteError.timeout }
+                    try self.setMode(false)
+                    Poll.wait(until: deadline)
+                    guard Date() < deadline else { throw RemoteError.timeout }
+                    try self.setMode(true)
+                    _ = try tree.settle(until: deadline)
+                }
+            }
+            defer { tree.rebuildOwnedMode = nil }
             return try body(tree)
         }
         try restore()
@@ -237,6 +243,7 @@ public final class SlackTree {
 
     public private(set) var windows: [any UINode]
     public internal(set) var sessionInfo: SessionInfo?
+    var rebuildOwnedMode: ((Date) throws -> Void)?
     private let readWindows: (() -> [any UINode])?
 
     public init(windows: [any UINode]) {
@@ -256,6 +263,17 @@ public final class SlackTree {
     public func refresh() throws {
         reload()
         guard !SlackWindow.clientWindows(in: self).isEmpty else { throw RemoteError.treeUnavailable }
+    }
+
+    func settle(until deadline: Date) throws -> [Int] {
+        var previousShape: [Int]?
+        guard let counts = Poll.until(deadline, {
+            reload()
+            let shape = shape()
+            defer { previousShape = shape }
+            return shape == previousShape ? shape : nil
+        }) else { throw RemoteError.treeUnavailable }
+        return counts
     }
 
     func shape() -> [Int]? {
