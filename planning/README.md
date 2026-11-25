@@ -31,6 +31,8 @@ Supporting documents: [`evidence.md`](evidence.md) records what the probes obser
 
 MVP, in the milestone: `doctor`, `current`, `open`, `read`, `draft set`, `draft clear`, `send`.
 
+Superseded for issue 4: [`next/`](next/README.md) plans the complete CLI as a second milestone and replaces issue 4's optional body with required work based on routes observed later. The rest of this section records the v0.1 view.
+
 Optional, outside the milestone: `read --thread`, `reply`, `react`. Issue 4 starts with a structural probe and builds only the paths that can be tied to a message id. The planning probe found that the hover toolbar is absent from the tree until a message is hovered or focused, and that Slack documents no link to a message or thread, so some of these may turn out to be unsupported.
 
 Out of scope altogether: scrolling or loading history, search, editing or deleting messages, file upload, scheduled sends, removing reactions, launching Slack, bridging from ssh into the GUI session.
