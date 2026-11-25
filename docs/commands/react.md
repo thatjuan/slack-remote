@@ -11,4 +11,4 @@ Success returns `ts`, `emoji`, `reacted: true`, and `alreadyReacted`. If the rea
 
 `--dry-run` reports the planned checks without opening the picker. An unknown shortcode returns `unsafe_text`. If the picker press returns `reaction_unconfirmed`, check the message before retrying.
 
-Slack 4.53.292 can hide the target message while the picker is open and expose several cells with the same ID. The command closes the picker and stops before pressing when it cannot verify one target and one exact cell.
+Slack can hide the target while the picker is open. The command verifies which message owns the menu and checks that the same client window, web area and conversation produced the picker. It searches by shortcode, requires one enabled exact match in the result grid, and recognizes row and column entries as duplicates only when they refer to the same Accessibility element. After pressing, it verifies the named, checked reaction on the original message.

@@ -24,6 +24,10 @@ public final class AXNode: UINode {
             && settable.boolValue
     }
 
+    func referencesSameElement(as other: AXNode) -> Bool {
+        CFEqual(element, other.element)
+    }
+
     public init(_ element: AXUIElement) {
         self.element = element
         let names = [kAXRoleAttribute, kAXSubroleAttribute, "AXDOMClassList", "AXDOMIdentifier", kAXChildrenAttribute]
