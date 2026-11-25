@@ -11,7 +11,7 @@
 
 - The binary targets macOS 14 or later on Apple silicon and Intel.
 - Sign in to the Slack desktop app and keep it open and visible in an unlocked macOS GUI session.
-- In **System Settings › Privacy & Security › Accessibility**, grant access to Terminal or whichever app launches `slack-remote`.
+- Run `slack-remote doctor --grant` from the app that launches `slack-remote` to grant Accessibility access.
 
 ## Install
 
@@ -37,7 +37,7 @@ The installer builds a release binary and puts it in `~/.local/bin`. Pass `--pre
 
 ## First run
 
-Run `slack-remote doctor` from the app that will launch the CLI and resolve any failed checks. In each workspace you plan to write to, run `slack-remote whoami --save` to record the active account in your local config.
+Run `slack-remote doctor --grant` from the app that will launch the CLI, turn on its Accessibility switch when Settings opens, and resolve any failed checks. You can also grant access manually in **System Settings › Privacy & Security › Accessibility** (**Device Control and Data Access** on macOS 27) by enabling your terminal, editor or agent app. In each workspace you plan to write to, run `slack-remote whoami --save` to record the active account in your local config.
 
 To set up a named destination, open the conversation in Slack and run `slack-remote current`. Put the returned `team` and `conversation` IDs in `TEAM_ID` and `CONVERSATION_ID`, then save and use the alias.
 

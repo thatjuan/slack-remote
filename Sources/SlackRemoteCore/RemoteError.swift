@@ -3,7 +3,7 @@ public enum RemoteError: Error {
     case axFailure(operation: String, code: Int32)
     case noGUISession
     case screenLocked
-    case accessibilityNotTrusted
+    case accessibilityNotTrusted(host: HostApp?)
     case slackNotRunning
     case ambiguousSlack
     case slackWindowUnavailable
@@ -101,8 +101,11 @@ public enum RemoteError: Error {
         case .axFailure: return "A macOS Accessibility operation failed."
         case .noGUISession: return "Run slack-remote inside the user's macOS login session."
         case .screenLocked: return "The screen is locked."
-        case .accessibilityNotTrusted:
-            return "Enable the app that launched slack-remote in System Settings › Privacy & Security › Accessibility."
+        case .accessibilityNotTrusted(let host):
+            if let host {
+                return "Turn on \(host.name) in \(Environment.accessibilitySettingsPath), or run slack-remote doctor --grant."
+            }
+            return "Turn on the app that runs this shell (your terminal, editor or agent app) in \(Environment.accessibilitySettingsPath), or run slack-remote doctor --grant from it."
         case .slackNotRunning: return "Slack is not running or has not finished launching."
         case .ambiguousSlack: return "More than one Slack process is running."
         case .slackWindowUnavailable: return "Slack is hidden or its client window is minimized."
@@ -159,6 +162,14 @@ public enum RemoteError: Error {
 
     public var details: [String: Detail]? {
         switch self {
+        case .accessibilityNotTrusted(let host):
+            var details: [String: Detail] = ["settingsUrl": .string(Environment.accessibilitySettingsURL.absoluteString)]
+            if let host {
+                details["hostApp"] = .string(host.name)
+                details["hostPath"] = .string(host.path)
+                if let bundleID = host.bundleID { details["hostBundleId"] = .string(bundleID) }
+            }
+            return details
         case .internalError(let operation): return ["operation": .string(operation)]
         case .axFailure(let operation, let code): return ["operation": .string(operation), "code": .integer(Int(code))]
         case .uiDrift(let locator, let found): return ["locator": .string(locator), "found": .integer(found)]
