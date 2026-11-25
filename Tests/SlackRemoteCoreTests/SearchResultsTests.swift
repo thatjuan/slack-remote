@@ -29,6 +29,18 @@ struct SearchResultsTests {
         #expect(SearchResults.content(type: "people", row: row) == .person(UserID("U0EEEEEEE"), label: "Ada"))
     }
 
+    @Test(arguments: ["people", "channels"])
+    func workspaceSourcesLeaveAnActiveInFilterUntouched(_ source: String) throws {
+        let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        fixture.filesTab.domID = source
+        fixture.showConversationFilter()
+
+        let error = #expect(throws: SearchResults.UnsupportedType.self) { try fixture.read(type: source) }
+        #expect(error?.requiresUnscopedSearch == true)
+        #expect(error?.available == ["messages", source])
+        #expect(fixture.filesTab.performCalls.isEmpty)
+    }
+
     @Test func doesNotTreatDisplayedTextAsAnID() throws {
         let row = Fixture.row(id: nil, sender: "Ada", text: "search-message-G0FFFFFFF-1700000000.000100")
         let fixture = try Fixture(rows: [row])
@@ -109,6 +121,25 @@ struct SearchResultsTests {
                                         keepOnSuccess: true) { throw RemoteError.partialResult }
         }
         #expect(error?.code == "partial_result")
+        #expect(fixture.links == [Fixture.start.channelLink])
+        #expect(try SlackWindow.currentWindow(in: fixture.tree).location.destination == Fixture.start)
+    }
+
+    @Test func interruptionWhileReadingResultsClosesThePaneAndRestoresTheStartingConversation() throws {
+        let row = Fixture.message(Fixture.firstTimestamp)
+        let fixture = try Fixture(rows: [row], atEnd: false)
+        fixture.showScopedResults(in: Fixture.result)
+        row.onPerform = { action in
+            #expect(action == .scrollToVisible)
+            #expect(fixture.tree.requestInterruption())
+        }
+
+        #expect(throws: SlackTree.Interruption.self) {
+            try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: fixture.navigator(),
+                                        keepOnSuccess: true) { try fixture.read() }
+        }
+        #expect(row.performCalls == [.scrollToVisible])
+        #expect(fixture.scopedClose?.performCalls == [.press])
         #expect(fixture.links == [Fixture.start.channelLink])
         #expect(try SlackWindow.currentWindow(in: fixture.tree).location.destination == Fixture.start)
     }

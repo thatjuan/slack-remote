@@ -108,10 +108,12 @@ public final class SlackApp {
             needsRestore = false
         }
 
+        var sessionTree: SlackTree?
         let sources = [SIGINT, SIGTERM, SIGHUP].map { number in
             let previous = signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
             source.setEventHandler {
+                if sessionTree?.requestInterruption() == true { return }
                 try? restore()
                 exit(130)
             }
@@ -128,6 +130,7 @@ public final class SlackApp {
         let result = Result {
             guard Date() < deadline else { throw RemoteError.treeUnavailable }
             let tree = SlackTree(refresh: readWindows)
+            sessionTree = tree
             let treeWasPresent = tree.shape() != nil
             if !treeWasPresent {
                 try saveMarker(marker)
@@ -154,7 +157,9 @@ public final class SlackApp {
             return try body(tree)
         }
         try restore()
-        return try result.get()
+        let value = try result.get()
+        try sessionTree?.checkInterruption()
+        return value
     }
 
     private func recoveryMarker() throws -> (URL, Bool) {
@@ -229,6 +234,8 @@ struct ProcessIdentity: Codable, Equatable {
 }
 
 public final class SlackTree {
+    struct Interruption: Error {}
+
     public struct SessionInfo {
         public enum Mode: String {
             case enabled = "enabled by this run"
@@ -245,6 +252,10 @@ public final class SlackTree {
     public internal(set) var sessionInfo: SessionInfo?
     var rebuildOwnedMode: ((Date) throws -> Void)?
     private let readWindows: (() -> [any UINode])?
+    var unwindOnSignal = false
+    private var interruptionDeadline: Date?
+    private var cleaningUp = false
+    public var interruptionRequested: Bool { interruptionDeadline != nil }
 
     public init(windows: [any UINode]) {
         self.windows = windows
@@ -261,8 +272,32 @@ public final class SlackTree {
     }
 
     public func refresh() throws {
+        try checkInterruption()
         reload()
+        try checkInterruption()
         guard !SlackWindow.clientWindows(in: self).isEmpty else { throw RemoteError.treeUnavailable }
+    }
+
+    // The main-queue signal handler only records cancellation. The caller unwinds its own UI transaction.
+    func requestInterruption() -> Bool {
+        guard unwindOnSignal else { return false }
+        if interruptionDeadline == nil { interruptionDeadline = Date().addingTimeInterval(5) }
+        return true
+    }
+
+    func checkInterruption() throws {
+        if interruptionRequested && !cleaningUp { throw Interruption() }
+    }
+
+    func cleanupDeadline(after seconds: TimeInterval) -> Date {
+        min(Date().addingTimeInterval(seconds), interruptionDeadline ?? .distantFuture)
+    }
+
+    func withCleanup<T>(_ work: () throws -> T) rethrows -> T {
+        let previous = cleaningUp
+        cleaningUp = true
+        defer { cleaningUp = previous }
+        return try work()
     }
 
     func settle(until deadline: Date) throws -> [Int] {

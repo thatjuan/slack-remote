@@ -88,16 +88,25 @@ struct Search: ParsableCommand {
 
     func run() throws {
         var runningApp: SlackApp?
+        var sessionTree: SlackTree?
         do {
             let (app, output) = try CommandSupport.withSession(options: options, prepare: { try Config.load() }) {
                 app, tree, deadline, config in
                 runningApp = app
+                sessionTree = tree
                 return try search(using: app, tree: tree, deadline: deadline, config: config)
             }
             try CommandSupport.succeed("search", app: app, result: output)
-        } catch let error as SearchResults.UnsupportedType {
-            try rejectType(error, app: runningApp)
         } catch {
+            if sessionTree?.interruptionRequested == true {
+                if let failure = error as? RemoteError {
+                    try? CommandSupport.fail("search", error: failure, app: runningApp, result: nil as Bool?)
+                }
+                throw ExitCode(130)
+            }
+            if let unavailable = error as? SearchResults.UnsupportedType {
+                try rejectType(unavailable, app: runningApp)
+            }
             try CommandSupport.fail("search", error: CommandSupport.remoteError(error), app: runningApp,
                                     result: nil as Bool?)
         }
@@ -128,20 +137,6 @@ struct Search: ParsableCommand {
         let navigator = Navigator(slackApp: app)
         let filters = SearchModal.Filters(conversation: requested?.conversation, fromMe: fromMe,
                                          hasLink: hasLink, threadsOnly: threadsOnly)
-
-        SearchInterruption.recover = {
-            do {
-                try app.withTree(deadline: Date().addingTimeInterval(5)) { freshTree in
-                    try SearchResults.restoring(start: start, in: freshTree, navigator: navigator,
-                                                keepOnSuccess: false) {
-                        try SearchModal.recoverInterruptedSearch(in: freshTree)
-                    }
-                }
-            } catch {
-                try? CommandSupport.fail("search", error: .overlayLeftOpen, app: app, result: nil as Bool?)
-            }
-        }
-        defer { SearchInterruption.recover = nil }
 
         return try SearchResults.restoring(start: start, in: tree, navigator: navigator,
                                            keepOnSuccess: open != nil) {
@@ -206,14 +201,4 @@ struct Search: ParsableCommand {
         try FileHandle.standardError.write(contentsOf: encoder.encode(envelope) + Data([0x0a]))
         throw ExitCode(RemoteError.unsupportedDestination.exitStatus)
     }
-}
-
-// The shared tree session exits on signals after restoring its Accessibility mode.
-private enum SearchInterruption {
-    static var recover: (() -> Void)? {
-        didSet { _ = registered }
-    }
-    private static let registered: Void = {
-        atexit { recover?() }
-    }()
 }
