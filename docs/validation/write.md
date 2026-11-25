@@ -11,7 +11,7 @@ The composer spike ran on main-mac with stock Slack 4.53.292. It acquired the CL
 
 The CLI enables method B and clears through `AXValue`. It stops before the send press if read-back differs from the requested text. The spike supplied no evidence for a normalization change.
 
-## Command checks
+## Initial command checks
 
 Fixture tests cover text refusal, composer state and write-method selection, draft conflicts, destination and dialog changes, and send confirmation. All fixtures use synthetic messages and make zero calls to Slack.
 
@@ -24,3 +24,16 @@ On main-mac, `swift build -c release`, `swift test` (47 tests), and `git diff --
 | Background Slack | Skipped. Slack was frontmost and the work did not change focus to create this condition. |
 | Preferences dialog and recent-input gate | Skipped while the foundation follow-up used the desktop. The dialog blocking behavior passed in fixtures. |
 | Send, multiline send, and send over an identical draft | Skipped until the combined navigation and message-list changes can be verified in the test destination. The composer spike made zero send presses. |
+
+## Combined release on main-mac
+
+The release build, all 49 tests, and `git diff --check` passed. The send fixture now requires `send_unconfirmed` with `draftLeft: true` when Slack acknowledges a press but the composer still holds text at the deadline.
+
+| Check | Observation |
+| --- | --- |
+| Destination and `doctor` | The configured self-DM matched Slack's signed-in self-DM marker, the selected sidebar row, and the client URL. All eight checks passed. The web area, primary view, editor, send button, and outer message list each matched once. |
+| `open` with the exact team and conversation | Exit `0`, returned the requested destination and `already_there`. The foundation follow-up had previously verified the sidebar navigation route into this self-DM. |
+| `read` for the exact destination | Four ordered messages with distinct timestamps and zero skipped items. All four had text and explicit sender labels. Three had attachment markers. `--limit 3` returned the same newest three messages. |
+| Sender identity | The four sender controls exposed display labels. None had a user ID as its Accessibility DOM identifier, and the rendered tree had no observed own-message class. A display label alone could not verify the signed-in sender. |
+| CLI draft set, draft conflict, exact clear, and live send | Skipped. The verified composer held text. The original probe token was never recorded, so the full contents could not be matched to the probe. The existing draft was left in place, and this run made zero send presses. |
+| Second destination | Skipped. The designated channel remained unresolved. |

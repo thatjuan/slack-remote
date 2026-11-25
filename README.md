@@ -59,7 +59,7 @@ The CLI checks text before opening a Slack session. It refuses blank text, text 
 
 If a failure reports `draftLeft: true` before the press, rerun `send` with the same text to resume an identical draft, or clear it with `draft clear --expect-text`. If Slack changed the text or the draft contains a broadcast mention, inspect and clear it in Slack. An error without `draftLeft` may mean the CLI could no longer verify the conversation.
 
-`send_unconfirmed` means Slack may have sent the message. Use `read` or check the conversation in Slack before retrying. Each invocation makes at most one press.
+After a press, `send_unconfirmed` means Slack may have sent the message, even if `draftLeft: true`. Use `read` or check the conversation in Slack before retrying. Each invocation makes at most one press.
 
 ## Exit statuses
 
@@ -73,7 +73,7 @@ If a failure reports `draftLeft: true` before the press, rerun `send` with the s
 | `13` | `destination_mismatch`, `destination_unreachable` |
 | `14` | `slack_in_use`, `busy` |
 | `15` | `unsafe_text`, `draft_conflict` |
-| `16` | `write_failed`, `write_unverified`, `send_not_performed` |
+| `16` | `write_failed`, `write_unverified` |
 | `17` | `send_unconfirmed` |
 | `18` | `timeout` |
 | `64` | Argument error |
