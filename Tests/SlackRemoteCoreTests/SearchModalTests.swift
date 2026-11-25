@@ -1,8 +1,17 @@
 import Foundation
+import ApplicationServices
 @testable import SlackRemoteCore
 import Testing
 
 struct SearchModalTests {
+    @Test func refreshedAccessibilityNodesCanIdentifyTheSameElementWithoutADOMID() {
+        let first = AXNode(AXUIElementCreateApplication(getpid()))
+        let refreshed = AXNode(AXUIElementCreateApplication(getpid()))
+        #expect(first.domID == nil)
+        #expect(first !== refreshed)
+        #expect(SearchPopup(node: first).matches(refreshed))
+    }
+
     @Test func appliesOnlyTheRequestedConversationFilter() throws {
         let fixture = try SearchModalFixture()
         try fixture.run()
@@ -86,6 +95,68 @@ struct SearchModalTests {
         #expect(fixture.backdrop.performCalls.isEmpty)
         #expect(replacement?.clear.performCalls.isEmpty == true)
         #expect(replacement?.backdrop.performCalls.isEmpty == true)
+    }
+
+    @Test func interruptionBeforeFirstPopupSnapshotWaitsForTheOwnedPopupAndItsBackdrop() throws {
+        let fixture = try SearchModalFixture()
+        var snapshotsAfterPress = 0
+        var initiated = false
+        let tree = SlackTree(refresh: {
+            if initiated {
+                snapshotsAfterPress += 1
+                if snapshotsAfterPress == 2 { fixture.showPopup(backdropReady: false) }
+                if snapshotsAfterPress == 5 { fixture.showPopup(backdropReady: true) }
+            }
+            return [fixture.window]
+        })
+        fixture.search.onPerform = { _ in
+            initiated = true
+            #expect(tree.requestInterruption())
+        }
+        let navigator = Navigator(openLink: { _ in Issue.record("Search navigated away from its verified start") },
+                                  frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
+
+        #expect(throws: SlackTree.Interruption.self) {
+            try SearchResults.restoring(start: fixture.destination, in: tree, navigator: navigator,
+                                        keepOnSuccess: false) {
+                try fixture.run(in: tree, onOpen: { Issue.record("Search did not own the popup before SIGINT") })
+            }
+        }
+        #expect(fixture.submit.performCalls.isEmpty)
+        #expect(fixture.backdrop.performCalls == [.press])
+        #expect(Overlays.open(in: tree).isEmpty)
+        #expect(try SlackWindow.currentWindow(in: tree).location.destination == fixture.destination)
+    }
+
+    @Test func interruptionAtTheOpenTraceWaitsForTheDismissControl() throws {
+        let fixture = try SearchModalFixture()
+        var interruptedSnapshots = 0
+        var interrupted = false
+        let tree = SlackTree(refresh: {
+            if interrupted {
+                interruptedSnapshots += 1
+                if interruptedSnapshots == 3 { fixture.showPopup(backdropReady: true) }
+            }
+            return [fixture.window]
+        })
+        // A search popup can expose its field before the backdrop is accessible.
+        fixture.search.onPerform = { _ in fixture.showPopup(backdropReady: false) }
+        let navigator = Navigator(openLink: { _ in Issue.record("Search navigated away from its verified start") },
+                                  frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
+
+        #expect(throws: SlackTree.Interruption.self) {
+            try SearchResults.restoring(start: fixture.destination, in: tree, navigator: navigator,
+                                        keepOnSuccess: false) {
+                try fixture.run(in: tree, onOpen: {
+                    interrupted = true
+                    #expect(tree.requestInterruption())
+                })
+            }
+        }
+        #expect(fixture.submit.performCalls.isEmpty)
+        #expect(fixture.backdrop.performCalls == [.press])
+        #expect(Overlays.open(in: tree).isEmpty)
+        #expect(try SlackWindow.currentWindow(in: tree).location.destination == fixture.destination)
     }
 
     @Test func interruptionStillClosesThePopupWhenClearingTheFieldFails() throws {

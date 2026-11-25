@@ -71,10 +71,15 @@ final class SearchModalFixture {
     func replaceSearchPopup() -> (clear: FakeNode, backdrop: FakeNode) {
         let clear = FakeNode(role: "AXButton", domClasses: ["c-search__input_box__clear"])
         let replacement = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Content"],
-                                   domID: "fixture-replacement-popup", children: [clear])
+                                   domID: modal.domID, children: [clear])
         let backdrop = FakeNode(role: "AXGroup", domClasses: ["ReactModal__Overlay"], children: [replacement])
         web.children = [backdrop]
         return (clear, backdrop)
+    }
+
+    func showPopup(backdropReady: Bool) {
+        wrapper.children = [backdropReady ? backdrop : modal]
+        web.children = [wrapper]
     }
 
     func run(query: String = "slack-remote test", filtered: Bool = true, in session: SlackTree? = nil,

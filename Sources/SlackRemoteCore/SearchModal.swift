@@ -4,7 +4,9 @@ struct SearchPopup {
     let node: any UINode
 
     func matches(_ candidate: any UINode) -> Bool {
-        if let id = node.domID, !id.isEmpty { return candidate.domID == id }
+        if let original = node as? AXNode, let refreshed = candidate as? AXNode {
+            return original.referencesSameElement(as: refreshed)
+        }
         return node as AnyObject === candidate as AnyObject
     }
 }
@@ -57,16 +59,25 @@ public enum SearchModal {
             throw RemoteError.uiDrift(locator: Locators.searchFilter.name, found: 0)
         }
         let view = try SlackWindow.verify(destination, in: tree)
+        let start = try SlackWindow.currentWindow(in: tree)
+        guard start.location.destination == destination else {
+            throw RemoteError.destinationMismatch(expected: destination, actual: start.location)
+        }
         let button = try view.window.one(Locators.searchButton)
         guard Date() < deadline else { throw RemoteError.timeout }
 
         var toggled: [String] = []
+        var openingAttempted = false
+        var queryWriteAttempted = false
         var submitted = false
         var owned: SearchPopup?
         let outcome = Result {
             try tree.checkInterruption()
+            openingAttempted = true
             try button.perform(.press)
-            guard let opened = try Poll.until(deadline, { try current(in: tree) }) else { throw RemoteError.timeout }
+            guard let opened = try Poll.until(deadline, { try openedFrom(start, in: tree) }) else {
+                throw RemoteError.timeout
+            }
             owned = SearchPopup(node: opened)
             onOpen()
             try tree.checkInterruption()
@@ -126,6 +137,7 @@ public enum SearchModal {
             }
             guard Date() < deadline else { throw RemoteError.timeout }
             try tree.checkInterruption()
+            queryWriteAttempted = true
             try field.set(.value, to: .string(query))
             let plain: Bool? = try Poll.until(min(deadline, Date().addingTimeInterval(2))) {
                 guard let field = try current(in: tree)?.one(Locators.searchQuery),
@@ -163,7 +175,20 @@ public enum SearchModal {
             submitted = true
             return try read()
         }
-        try tree.withCleanup { try close(in: tree, owned: owned, rollback: submitted ? [] : toggled) }
+        try tree.withCleanup {
+            if openingAttempted, owned == nil {
+                // Slack can render the popup after AXPress returns or after the signal interrupts a refresh.
+                // The starting window and location must still match before taking ownership.
+                do {
+                    if let opened = try Poll.until(tree.cleanupDeadline(after: 2), { try openedFrom(start, in: tree) }) {
+                        owned = SearchPopup(node: opened)
+                    }
+                } catch {
+                    throw RemoteError.overlayLeftOpen
+                }
+            }
+            try close(in: tree, owned: owned, rollback: submitted ? [] : toggled, clearQuery: queryWriteAttempted)
+        }
         try tree.checkInterruption()
         return try outcome.get()
     }
@@ -176,6 +201,21 @@ public enum SearchModal {
     private static func current(in tree: SlackTree) throws -> (any UINode)? {
         try tree.refresh()
         let window = try SlackWindow.currentWindow(in: tree).window
+        return try modal(in: window, tree: tree)
+    }
+
+    private static func openedFrom(_ start: ClientWindow, in tree: SlackTree) throws -> (any UINode)? {
+        try tree.refresh()
+        let current = try SlackWindow.currentWindow(in: tree)
+        guard current.location == start.location, SearchPopup(node: start.window).matches(current.window) else {
+            throw RemoteError.uiDrift(locator: Locators.searchModal.name, found: 0)
+        }
+        guard let modal = try modal(in: current.window, tree: tree),
+              modal.all(Locators.searchQuery).count == 1 else { return nil }
+        return modal
+    }
+
+    private static func modal(in window: any UINode, tree: SlackTree) throws -> (any UINode)? {
         let modals = window.descendants().filter { node in
             Locators.searchModal.matches(node)
                 || (node.domClasses.contains(Locators.modalContent) && node.all(Locators.searchWrapper).count == 1)
@@ -241,60 +281,74 @@ public enum SearchModal {
         return activeFilters(in: modal) == Set(requested) && count == requested.count
     }
 
-    private static func close(in tree: SlackTree, owned: SearchPopup?, rollback: [String]) throws {
+    private static func close(in tree: SlackTree, owned: SearchPopup?, rollback: [String], clearQuery: Bool) throws {
         var fieldCleanupError: (any Error)?
         do {
-            let cleanupDeadline = tree.cleanupDeadline(after: 3)
-            func ownedModal() throws -> (any UINode)? {
-                guard let modal = try current(in: tree) else { return nil }
+            let cleanupDeadline = tree.cleanupDeadline(after: 4)
+            func ownedModal() throws -> (client: ClientWindow, node: any UINode)? {
+                try tree.refresh()
+                let client = try SlackWindow.currentWindow(in: tree)
+                guard let modal = try modal(in: client.window, tree: tree) else { return nil }
                 guard owned?.matches(modal) == true else { throw RemoteError.overlayLeftOpen }
-                return modal
+                return (client, modal)
             }
             func requireTime() throws {
                 guard Date() < cleanupDeadline else { throw RemoteError.overlayLeftOpen }
             }
-            if try ownedModal() != nil {
-                for id in rollback.reversed() {
-                    do {
-                        guard let refreshed = try ownedModal() else { break }
-                        if activeFilters(in: refreshed).contains(id) {
-                            try requireTime()
-                            try filter(id, in: refreshed).perform(.press)
-                        }
-                    } catch { fieldCleanupError = error }
+            var visible = try ownedModal()
+            for id in rollback.reversed() {
+                guard let node = visible?.node else { break }
+                if activeFilters(in: node).contains(id) {
+                    try requireTime()
+                    do { try filter(id, in: node).perform(.press) }
+                    catch { fieldCleanupError = error }
+                    visible = try ownedModal()
                 }
-                let clear = try ownedModal()?.all(Locators.searchClear) ?? []
+            }
+            if clearQuery, let node = visible?.node {
+                let clear = node.all(Locators.searchClear)
                 guard clear.count <= 1 else { throw RemoteError.overlayLeftOpen }
                 if let button = clear.first {
                     try requireTime()
                     do { try button.perform(.press) }
                     catch { fieldCleanupError = error }
+                    visible = try ownedModal()
                 }
-                if let fresh = try ownedModal() {
-                    let buttons = fresh.all(Locators.searchClose)
-                    if buttons.count == 1 {
-                        try requireTime()
-                        try? buttons.first?.perform(.press)
+            }
+            if let owned, let original = visible?.client.location {
+                func dismissControl(in client: ClientWindow, popup: any UINode) -> (any UINode)? {
+                    let buttons = popup.all(Locators.searchClose)
+                    if buttons.count == 1 { return buttons.first }
+                    return ownedBackdrop(owned, in: client.window)
+                }
+                var target = visible.flatMap { dismissControl(in: $0.client, popup: $0.node) }
+                if target == nil {
+                    // Slack can render the search field before it exposes the dismiss control.
+                    _ = try Poll.until(min(cleanupDeadline, Date().addingTimeInterval(0.6))) { () -> Bool? in
+                        visible = try ownedModal()
+                        guard let visible else { return true }
+                        target = dismissControl(in: visible.client, popup: visible.node)
+                        return target == nil ? nil : true
                     }
                 }
-                if try ownedModal() != nil {
-                    let original = try SlackWindow.currentWindow(in: tree).location
-                    var backdrop = try ownedBackdrop(in: tree)
-                    if backdrop == nil, let rebuild = tree.rebuildOwnedMode {
-                        try rebuild(cleanupDeadline)
-                        guard try SlackWindow.currentWindow(in: tree).location == original else {
-                            throw RemoteError.overlayLeftOpen
-                        }
-                        if try ownedModal() != nil { backdrop = try ownedBackdrop(in: tree) }
-                    }
-                    if try ownedModal() != nil {
-                        guard let backdrop else { throw RemoteError.overlayLeftOpen }
+                if target == nil, visible != nil, let rebuild = tree.rebuildOwnedMode {
+                    try rebuild(cleanupDeadline)
+                    visible = try ownedModal()
+                    target = visible.flatMap { dismissControl(in: $0.client, popup: $0.node) }
+                }
+                if let visible {
+                    guard visible.client.location == original, let target else { throw RemoteError.overlayLeftOpen }
+                    try requireTime()
+                    try? target.perform(.press)
+                    if Locators.searchClose.matches(target), let stillOpen = try ownedModal(),
+                       stillOpen.client.location == original,
+                       let backdrop = ownedBackdrop(owned, in: stillOpen.client.window) {
                         try requireTime()
                         try? backdrop.perform(.press)
-                        guard try Poll.until(cleanupDeadline, {
-                            try ownedModal() == nil ? true : nil
-                        }) == true else { throw RemoteError.overlayLeftOpen }
                     }
+                    guard try Poll.until(cleanupDeadline, {
+                        try ownedModal() == nil ? true : nil
+                    }) == true else { throw RemoteError.overlayLeftOpen }
                 }
             }
             try tree.refresh()
@@ -305,13 +359,10 @@ public enum SearchModal {
         if let fieldCleanupError { throw fieldCleanupError }
     }
 
-    private static func ownedBackdrop(in tree: SlackTree) throws -> (any UINode)? {
-        let window = try SlackWindow.currentWindow(in: tree).window
-        let possible = window.all(Locators.modalOverlay).filter { $0.all(Locators.informationalTooltip).isEmpty }
-        let associated = possible.filter {
-            $0.all(Locators.searchModal).count == 1 || $0.all(Locators.searchWrapper).count == 1
+    private static func ownedBackdrop(_ popup: SearchPopup, in window: any UINode) -> (any UINode)? {
+        let associated = window.all(Locators.modalOverlay).filter {
+            $0.all(Locators.informationalTooltip).isEmpty && $0.descendants().contains(where: popup.matches)
         }
-        let backdrops = associated.isEmpty && Overlays.open(in: tree) == [.modal] ? possible : associated
-        return backdrops.count == 1 ? backdrops.first : nil
+        return associated.count == 1 ? associated.first : nil
     }
 }
