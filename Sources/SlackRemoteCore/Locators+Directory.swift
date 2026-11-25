@@ -7,6 +7,10 @@ extension Locators {
     static let addChannelsButton = Locator(name: "addChannelsButton", role: "AXPopUpButton")
     static let addChannelsMenuItem = Locator(name: "addChannelsMenuItem", role: "AXMenuItem",
                                              classes: ["c-menu_item__button"])
+    // The two choices share their structural classes and have generated IDs.
+    static func isBrowseChannels(_ item: any UINode) -> Bool {
+        item.string(.title)?.localizedCaseInsensitiveCompare("Browse channels") == .orderedSame
+    }
 
     static let directoryTabPanel = Locator(name: "directoryTabPanel", role: "AXGroup", subrole: "AXTabPanel",
                                             classes: ["c-tabs__tab_panel--active", "c-tabs__tab_panel--full_height"])
