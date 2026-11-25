@@ -80,6 +80,27 @@ struct FileStagingTests {
         }
     }
 
+    @Test func stagesAnOpenDescriptorByItsSuppliedName() throws {
+        try withDirectory { root in
+            let source = root.appendingPathComponent("source")
+            let bytes = Data([1, 2, 3])
+            try bytes.write(to: source)
+            let fd = open(source.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            try #require(fd >= 0)
+            defer { close(fd) }
+            try FileManager.default.removeItem(at: source)
+            let path = "/dev/fd/\(fd)"
+            let file = try FileStaging(path: path, name: "original.txt")
+            #expect(file.file.bytes == bytes.count)
+            try file.withStagedFile(in: root) { staged in
+                #expect(staged.lastPathComponent == "original.txt")
+                let copied = try Data(contentsOf: staged)
+                #expect(copied == bytes)
+            }
+            expectRejection("invalid_name") { _ = try FileStaging(path: path, name: "../invalid") }
+        }
+    }
+
     private func expectRejection(_ reason: String, _ work: () throws -> Void) {
         do {
             try work()

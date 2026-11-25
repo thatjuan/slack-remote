@@ -1,6 +1,16 @@
 import ArgumentParser
+import Darwin
 
 @main
+enum Entry {
+    static func main() {
+        if let status = HelperClient.forwardIfAvailable(arguments: Array(CommandLine.arguments.dropFirst())) {
+            exit(status)
+        }
+        SlackRemote.main()
+    }
+}
+
 struct SlackRemote: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "slack-remote",
