@@ -10,7 +10,8 @@ enum SlackFixture {
             return FakeNode(role: "AXRow", subrole: "AXOutlineRow", domClasses: classes, domID: id, children: [control])
         }
         let outline = FakeNode(role: "AXOutline", domClasses: ["c-virtual_list__scroll_container"], children: rows)
-        let list = FakeNode(role: "AXList", subrole: "AXContentList")
+        let spacer = FakeNode(role: "AXGroup", domClasses: ["c-virtual_list__item"], domID: "message-list_bottomSpacer")
+        let list = FakeNode(role: "AXList", subrole: "AXContentList", domClasses: ["sr-only"], children: [spacer])
         let pane = FakeNode(role: "AXGroup", domClasses: ["p-message_pane"], children: [list])
         let editor = FakeNode(role: "AXTextArea", domClasses: ["ql-editor", Locators.composerBlank],
                               attributes: [.value: .string("")])
