@@ -4,6 +4,7 @@ public enum RemoteError: Error {
     case noGUISession
     case screenLocked
     case accessibilityNotTrusted(host: HostApp?)
+    case helperVersionMismatch
     case slackNotRunning
     case ambiguousSlack
     case slackWindowUnavailable
@@ -43,6 +44,7 @@ public enum RemoteError: Error {
         case .noGUISession: return "no_gui_session"
         case .screenLocked: return "screen_locked"
         case .accessibilityNotTrusted: return "accessibility_not_trusted"
+        case .helperVersionMismatch: return "helper_version_mismatch"
         case .slackNotRunning: return "slack_not_running"
         case .ambiguousSlack: return "ambiguous_slack"
         case .slackWindowUnavailable: return "slack_window_unavailable"
@@ -80,7 +82,7 @@ public enum RemoteError: Error {
     public var exitStatus: Int32 {
         switch self {
         case .internalError, .axFailure, .notImplemented: return 1
-        case .noGUISession, .screenLocked, .accessibilityNotTrusted: return 10
+        case .noGUISession, .screenLocked, .accessibilityNotTrusted, .helperVersionMismatch: return 10
         case .slackNotRunning, .ambiguousSlack, .slackWindowUnavailable, .slackNotReady, .treeUnavailable: return 11
         case .uiDrift, .ambiguousWindow, .uiBlocked, .overlayLeftOpen: return 12
         case .destinationMismatch, .destinationUnreachable, .messageNotRendered, .unsupportedDestination: return 13
@@ -106,6 +108,8 @@ public enum RemoteError: Error {
                 return "Turn on \(host.name) in \(Environment.accessibilitySettingsPath), or run slack-remote doctor --grant."
             }
             return "Turn on the app that runs this shell (your terminal, editor or agent app) in \(Environment.accessibilitySettingsPath), or run slack-remote doctor --grant from it."
+        case .helperVersionMismatch:
+            return "SlackRemote.app is a different version from this slack-remote. Quit SlackRemote from the menu bar and run the command again."
         case .slackNotRunning: return "Slack is not running or has not finished launching."
         case .ambiguousSlack: return "More than one Slack process is running."
         case .slackWindowUnavailable: return "Slack is hidden or its client window is minimized."

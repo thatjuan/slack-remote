@@ -7,6 +7,7 @@ struct Upload: ParsableCommand {
     @OptionGroup var options: CommandOptions
     @OptionGroup var target: DestinationOptions
     @Option(help: "Path to the local file.") var file: String
+    @Option(help: .hidden) var fileName: String?
     @Option(help: "Text to send with the file.") var text: String?
     @Option(help: "The parent message's Slack timestamp.") var thread: String?
     @Flag(help: "Share the thread reply with the conversation.") var alsoSendToChannel = false
@@ -53,7 +54,7 @@ struct Upload: ParsableCommand {
     func run() throws {
         let source: FileStaging
         do {
-            source = try FileStaging(path: file, maxSize: maxSize)
+            source = try FileStaging(path: file, name: fileName, maxSize: maxSize)
         } catch {
             try CommandSupport.fail("upload", error: CommandSupport.remoteError(error), result: nil as Bool?)
         }

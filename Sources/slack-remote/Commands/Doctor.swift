@@ -19,7 +19,7 @@ struct Doctor: ParsableCommand {
     }
 
     private struct Report: Encodable {
-        static let names = ["gui_session", "screen_unlocked", "accessibility_trusted", "slack_running",
+        static let names = ["helper", "gui_session", "screen_unlocked", "accessibility_trusted", "slack_running",
                             "slack_visible", "tree_available", "client_window", "locators"]
 
         private var results: [String: Check] = [:]
@@ -61,6 +61,9 @@ struct Doctor: ParsableCommand {
 
     func run() throws {
         var report = Report()
+        let helperDetail = ProcessInfo.processInfo.environment["SLACK_REMOTE_VIA_HELPER"]
+            .map { "via SlackRemote.app \($0)" } ?? "not used: \(HelperClient.unusedReason.rawValue)"
+        report.pass("helper", detail: helperDetail)
         if let session = report.check("gui_session", work: Environment.guiSession) {
             _ = report.check("screen_unlocked") { try Environment.requireUnlocked(session) }
         }
