@@ -17,7 +17,7 @@ public enum MemberList {
 
     public static func read(_ destination: Destination, in tree: SlackTree, bounds: PageBounds) throws -> Snapshot {
         try requireSupported(destination)
-        let snapshot = try Overlays.withModal(in: tree, deadline: bounds.deadline, opening: {
+        let snapshot = try Overlays.withModal(in: tree, deadline: bounds.deadline, within: Locators.aboutModal, opening: {
             let view = try SlackWindow.verify(destination, in: tree)
             let header = try view.primaryView.one(Locators.conversationHeader)
             guard let button = header.all(Locators.memberDetails).first else {
@@ -58,12 +58,12 @@ public enum MemberList {
     private static func collect(in tree: SlackTree, bounds: PageBounds) throws -> Snapshot {
         var modal = try currentModal(in: tree)
         var membersTab = try tab(in: modal)
-        if membersTab.bool(.value) != true {
+        if !membersTab.domClasses.contains(Locators.activeTabClass) {
             try membersTab.perform(.press)
             let selection = try Poll.until(bounds.deadline) {
                 modal = try currentModal(in: tree)
                 let candidate = try tab(in: modal)
-                return candidate.bool(.value) == true ? candidate : nil
+                return candidate.domClasses.contains(Locators.activeTabClass) ? candidate : nil
             }
             guard let selection else { throw RemoteError.timeout }
             membersTab = selection

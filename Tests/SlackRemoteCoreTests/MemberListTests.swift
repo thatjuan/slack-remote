@@ -29,6 +29,15 @@ final class MemberListTests: XCTestCase {
         XCTAssertEqual(MemberList.withCountCheck(limited, expected: 2).stopReason, .limit)
     }
 
+    func testSelectsMembersTabOnceWhenAnotherTabIsActive() throws {
+        let fixture = try MemberModalFixture(rows: [DirectoryFixtures.memberRow("U0EEEEEEE")],
+                                             tabTitle: "Members (1)", selected: false)
+        let result = try MemberList.read(DirectoryFixtures.destination, in: fixture.tree, bounds: DirectoryFixtures.bounds())
+        XCTAssertTrue(result.listing.complete)
+        XCTAssertEqual(fixture.tab.performCalls, [.press])
+        XCTAssertFalse(fixture.isOpen)
+    }
+
     func testExpectedCountUsesFirstIntegerAndAcceptsLocalizedDigits() {
         XCTAssertEqual(MemberList.expectedCount(in: "Members ١٬٢٣٤ of 2,000"), 1_234)
         XCTAssertNil(MemberList.expectedCount(in: "Members"))

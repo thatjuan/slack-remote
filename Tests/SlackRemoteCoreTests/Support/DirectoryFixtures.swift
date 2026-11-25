@@ -27,14 +27,15 @@ final class MemberModalFixture {
     let window = SlackFixture.window()
     let opener = FakeNode(role: "AXButton", domClasses: Locators.memberDetails.classes)
     let close = FakeNode(role: "AXButton", domClasses: Locators.aboutClose.classes)
-    let tab = FakeNode(role: "AXRadioButton", domID: "members")
+    let tab = FakeNode(role: "AXRadioButton", domClasses: [Locators.activeTabClass], domID: "members")
     private(set) var isOpen = false
 
     var tree: SlackTree { SlackTree(refresh: { [self.window] }) }
 
-    init(rows: [FakeNode], tabTitle: String?) throws {
-        tab.attributes = [.value: .bool(true)]
+    init(rows: [FakeNode], tabTitle: String?, selected: Bool = true) throws {
+        if !selected { tab.domClasses.removeAll() }
         if let tabTitle { tab.attributes[.title] = .string(tabTitle) }
+        tab.onPerform = { [weak tab] _ in tab?.domClasses.append(Locators.activeTabClass) }
         let toolbar = FakeNode(role: "AXToolbar", domClasses: Locators.conversationHeader.classes, children: [opener])
         let primary = try window.one(Locators.primaryView) as! FakeNode
         let web = try window.one(Locators.webArea) as! FakeNode

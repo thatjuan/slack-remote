@@ -53,4 +53,24 @@ final class SidebarListTests: XCTestCase {
         XCTAssertEqual(result.stopReason, .limit)
         XCTAssertEqual(second.performCalls, [])
     }
+
+    func testScrollRestorationReacquiresARecycledSelectedRow() throws {
+        let first = DirectoryFixtures.sidebarRow("C0AAAAAAA")
+        let selected = DirectoryFixtures.sidebarRow("C0BBBBBBB", selected: true)
+        let replacement = DirectoryFixtures.sidebarRow("C0BBBBBBB", selected: true)
+        let next = DirectoryFixtures.sidebarRow("C0CCCCCCC")
+        let end = DirectoryFixtures.sidebarRow(Locators.sidebarEndID)
+        let list = FakeNode(role: "AXOutline", children: [first, selected])
+        selected.onPerform = { _ in
+            guard list.children.contains(where: { $0.domID == selected.domID }) else {
+                throw RemoteError.axFailure(operation: "AXScrollToVisible", code: -1)
+            }
+            list.children = [next, end]
+        }
+        next.onPerform = { _ in list.children = [first, replacement] }
+
+        let result = try SidebarList.collect(bounds: DirectoryFixtures.bounds()) { list }
+        XCTAssertTrue(result.complete)
+        XCTAssertEqual(replacement.performCalls, [.scrollToVisible])
+    }
 }

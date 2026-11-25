@@ -65,12 +65,15 @@ struct Channels: ParsableCommand {
 
     func run() throws {
         try listing.run("channels", options: options) { app, tree, bounds in
-            guard source == .sidebar else { throw RemoteError.unsupportedDestination }
             return try Directory.withWorkspace(workspace.team, app: app, in: tree, deadline: bounds.deadline) { team in
                 _ = try Account.verify(team: team, in: tree, config: Config.load(), access: .read,
                                        deadline: bounds.deadline, warn: app.warn)
                 try Environment.requireSlackIdle(interrupt: false)
-                let snapshot = try SidebarList.read(team: team, in: tree, bounds: bounds)
+                let snapshot: Paged<SidebarList.Channel>
+                switch source {
+                case .sidebar: snapshot = try SidebarList.read(team: team, in: tree, bounds: bounds)
+                case .browser: snapshot = try Directory.channels(team: team, app: app, in: tree, bounds: bounds)
+                }
                 return (Result(team: team, source: source, complete: snapshot.complete,
                                stopReason: snapshot.stopReason, pages: snapshot.pages,
                                channels: snapshot.items), snapshot.stopReason)
