@@ -114,7 +114,7 @@ public struct Navigator {
         var previousShape: [Int]?
         let settled: Bool? = try Poll.until(deadline) {
             try tree.refresh()
-            try Overlays.requireUnblocked(in: tree)
+            guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
             do {
                 _ = try SlackWindow.verify(destination, in: tree)
                 lastLocation = .conversation(destination, trailing: [])

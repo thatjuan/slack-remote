@@ -35,4 +35,16 @@ struct DryRunTests {
         #expect(fixture.editor.setCalls.isEmpty)
         #expect(fixture.send.performCalls.isEmpty)
     }
+
+    @Test func rejectsDisabledSendForAMatchingDraft() throws {
+        let fixture = try ComposerFixture()
+        fixture.show(.text("synthetic"))
+        fixture.disableSend()
+        let error = #expect(throws: RemoteError.self) {
+            try DryRun.preview(.send("synthetic"), destination: fixture.view.destination, user: nil,
+                preference: .auto, config: nil, in: fixture.tree, deadline: .distantFuture)
+        }
+        #expect(error?.code == "write_unverified")
+        #expect(fixture.send.performCalls.isEmpty)
+    }
 }

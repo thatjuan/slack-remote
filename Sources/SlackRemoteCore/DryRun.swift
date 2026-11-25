@@ -22,10 +22,6 @@ public struct DryRun: Encodable {
                                preference: Navigator.RoutePreference, config: Config?,
                                in tree: SlackTree, deadline: Date,
                                warn: (String) -> Void = { _ in }) throws -> DryRun {
-        try tree.refresh()
-        try Overlays.requireUnblocked(in: tree)
-        let client = try SlackWindow.currentWindow(in: tree)
-        let atDestination = client.location.destination == destination
         let access: Account.Access
         switch operation {
         case .open: access = .read
@@ -33,16 +29,24 @@ public struct DryRun: Encodable {
             access = .dryRunWrite
             try config?.requireWriteAllowed(to: destination)
         }
+        try tree.refresh()
+        try Overlays.requireUnblocked(in: tree)
+        let client = try SlackWindow.currentWindow(in: tree)
+        let atDestination = client.location.destination == destination
         let account = try Account.verify(team: destination.team, in: tree, config: config, access: access,
                                          deadline: deadline, warn: warn)
         var state: ComposerState?
+        var sendEnabled: Bool?
         let route = Navigator.plannedRoute(to: destination, user: user, preference: preference)
         var plan: [String] = []
         if !atDestination || preference == .sidebar { plan.append("navigate via \(route.rawValue)") }
         plan.append("verify destination")
         if atDestination {
             let view = try SlackWindow.verify(destination, in: tree)
-            state = try Composer(view: view).state()
+            let controls = try Composer(view: view).controls(in: view)
+            state = try controls.state()
+            sendEnabled = controls.enabled
+            try Composer.requireLiveDestination(view)
         } else if preference == .sidebar {
             try Navigator.requireSidebarTarget(for: destination, in: client)
         }
@@ -60,8 +64,12 @@ public struct DryRun: Encodable {
             else { plan.append("clear matching draft") }
         case .send(let text):
             try requireCompatibleDraft(state, text: text)
-            if state == .text(MessageText.normalize(text)) { plan.append("reuse matching draft") }
-            else { plan.append("write text (\(text.count) characters)") }
+            if state == .text(MessageText.normalize(text)) {
+                guard sendEnabled == true else { throw RemoteError.writeUnverified(draftLeft: true) }
+                plan.append("reuse matching draft")
+            } else {
+                plan.append("write text (\(text.count) characters)")
+            }
             plan += ["final gate", "press send once", "confirm message"]
         }
         let composer: ComposerStatus

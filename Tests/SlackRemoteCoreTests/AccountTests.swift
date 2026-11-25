@@ -71,8 +71,12 @@ struct AccountTests {
         let filter = FakeNode(role: "AXCheckBox", domID: Locators.selfFilterPrefix + user.rawValue)
         let clear = FakeNode(role: "AXButton", domClasses: Locators.searchClear.classes)
         let modal = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent], children: [filter, clear])
-        let overlay = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes)
-        button.onPerform = { _ in fixture.webArea.children = [modal, overlay] }
+        let overlay = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes + ["c-search_modal"],
+                               children: [modal])
+        let coachmark = FakeNode(role: "AXGroup", subrole: "AXApplicationDialog", domClasses: [Locators.modalContent])
+        let coachmarkBackdrop = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes,
+                                         children: [coachmark])
+        button.onPerform = { _ in fixture.webArea.children = [overlay, coachmarkBackdrop] }
         overlay.onPerform = { _ in fixture.webArea.children = unblocked }
 
         let config = configuration(selfDM: selfDM)
@@ -90,6 +94,7 @@ struct AccountTests {
         #expect(button.performCalls == [.press])
         #expect(clear.performCalls == [.press])
         #expect(overlay.performCalls == [.press])
+        #expect(coachmarkBackdrop.performCalls.isEmpty)
         #expect(Overlays.open(in: fixture.tree).isEmpty)
 
         filter.domID = Locators.selfFilterPrefix + "U0FFFFFFF"

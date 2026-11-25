@@ -32,9 +32,11 @@ public struct Account: Codable, Equatable {
         let client = try SlackWindow.currentWindow(in: tree)
         guard let team = client.location.team else { throw RemoteError.slackNotReady }
         let selfDM = try sidebarSelfDM(in: client.window)
-        let button = try client.window.one(Locators.searchButton)
-        let user: UserID = try Overlays.withModal(in: tree, deadline: deadline, opening: {
+        let user: UserID = try Overlays.withModal(in: tree, deadline: deadline, within: Locators.searchModal, opening: {
             guard Date() < deadline else { throw RemoteError.timeout }
+            let current = try SlackWindow.currentWindow(in: tree)
+            guard current.location == client.location else { throw RemoteError.accountUnverified }
+            let button = try current.window.one(Locators.searchButton)
             try button.perform(.press)
         }) { modal in
             // Clear a restored search field even if the quick filter could not be read.

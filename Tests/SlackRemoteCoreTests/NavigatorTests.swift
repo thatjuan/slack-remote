@@ -124,6 +124,22 @@ struct NavigatorTests {
         #expect(links == [channel.channelLink])
     }
 
+    @Test func reportsAnOverlayThatAppearedDuringNavigation() throws {
+        var window = SlackFixture.window(conversation: dm.conversation.rawValue)
+        let tree = SlackTree(refresh: { [window] })
+        let popup = FakeNode(role: "AXGroup", domClasses: [Locators.modalContent])
+        let navigator = navigator { _ in
+            window = SlackFixture.window()
+            window.children.append(popup)
+        }
+        let error = #expect(throws: RemoteError.self) {
+            try navigator.navigate(to: channel, user: nil, interrupt: false, in: tree,
+                                   deadline: Date().addingTimeInterval(2))
+        }
+        #expect(error?.code == "overlay_left_open")
+        #expect(popup.performCalls.isEmpty)
+    }
+
     @Test func recentInputWhileSlackIsFrontmostBlocksNavigation() {
         let tree = SlackTree(windows: [SlackFixture.window(conversation: dm.conversation.rawValue)])
         let navigator = navigator(frontmost: SlackApp.bundleIdentifier, idle: 0) { _ in

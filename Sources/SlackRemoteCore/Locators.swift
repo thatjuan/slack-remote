@@ -47,6 +47,7 @@ public enum Locators {
                                                subrole: "AXUserInterfaceTooltip", classes: ["c-popover__content"])
     public static let selfDM = "p-channel_sidebar__channel--im-you"
     public static let searchButton = Locator(name: "searchButton", role: "AXButton", classes: ["p-top_nav__search"])
+    static let searchModal = Locator(name: "searchModal", role: "AXGroup", classes: ["c-search_modal"])
     public static let searchClear = Locator(name: "searchClear", role: "AXButton",
                                              classes: ["c-search__input_box__clear"])
     public static let selfFilterPrefix = "quick-filter-from-"
