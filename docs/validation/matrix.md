@@ -6,7 +6,7 @@ The runs used a mode-`0600` test configuration and the shared project lock. The 
 
 | # | Area | Command or action | Expected | Outcome | Note |
 |---|---|---|---|---|---|
-| 1 | Build | `swift test` | all tests pass | pass | The release build, 165 Swift Testing tests, 18 XCTest cases and `git diff --check` passed with the self-DM write fix. |
+| 1 | Build | `swift test` | all tests pass | pass | The release build, 171 Swift Testing tests, 18 XCTest cases and `git diff --check` passed with the scoped Files fix. |
 | 2 | Install | `scripts/install.sh`, `slack-remote --version` | `1.0.0` | pass | Installed to an isolated prefix and to the default prefix under a disposable home. Both printed `1.0.0`. Reinstall succeeded, unrelated and symlink targets were refused, and uninstall preserved both local data directories. |
 | 3 | Environment | `doctor` | every check passes | pass | The installed CLI passed all eight checks. |
 | 4 | Environment | `doctor` from an ssh shell | exit 10 | pass | The SSH invocation exited `10` with `accessibility_not_trusted`. |
@@ -57,7 +57,7 @@ The runs used a mode-`0600` test configuration and the shared project lock. The 
 - The earlier build could reopen a scoped search pane on directory return. With the fix installed, scoped Messages returned five identified synthetic hits, one-page People returned five entries, and the next in-place read returned seven ordered messages in verified notes. Independent inspection found zero secondary panes, modals or sheets. [Directory return regression](search.md#directory-return)
 - The five-snapshot notes history run returned 17 ordered, unique messages with `limit`, `complete: false` and `scrollRestored: true`. A separate rendered read confirmed the starting message was visible again. Exact viewport coordinates were unmeasured. The history follow-up also restored the starting message after four and five snapshots. [History anchor recovery](read.md#history-anchor-recovery)
 - The notes search exposed one results snapshot. The available synthetic fixtures did not exercise a second search page.
-- Scoped Messages found both self-DM test messages and restored notes. Scoped Files returned `13 / destination_mismatch`. The run closed its search pane through the verified header and restored notes. [Positive self-DM search](search.md#positive-self-dm-search)
+- Scoped Files returned the existing synthetic self-DM upload with an exact filename and file ID. Notes Files also returned identified files. A self-DM query with only an empty scoped pane returned `13 / unsupported_destination` and restored notes. [Scoped Files transition](search.md#scoped-files-transition)
 
 The matrix has 41 passes and two skips. Screen locking and live recent-input gating in rows 5 and 24 require a physical operator.
 

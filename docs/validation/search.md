@@ -58,6 +58,18 @@ The patched build passed the original sequence and kept notes clear after the sh
 
 Two scoped Messages searches returned one exact self-DM hit each for the synthetic send and the upload caption. The send hit matched the receipt timestamp. Both searches verified the self filter and returned to `notes`. A scoped Files search returned `13 / destination_mismatch` and left its results pane in `self`. A locked check matched the destination and closed that pane through its stock search header. The final snapshot verified `notes` with an empty composer and zero secondary panes, modals or sheets. [Self-DM write validation](write.md#live-recovery-under-the-passive-preview)
 
+## Scoped Files transition
+
+On stock Slack 4.53.292, the self-DM Files retest reused the existing synthetic upload and matched the exact signed-in account. The scoped pane rendered before its **View in Search** button. Expanding the pane changed the URL from the exact self-DM to the workspace’s full search view. The URL, native In control and its title stayed the same as the selected source changed from Messages to Files. Slack exposed the generated filename and file ID. The file row itself had no conversation ID.
+
+With a query that never acquired a full-search launcher, Slack showed only the scoped empty pane. Its Back and Close buttons shared icon classes, with Back nested under the header. The fixed CLI returned `13 / unsupported_destination`, closed the direct Close control and restored `notes`.
+
+Full self-scoped search could hide and later remount its pane. A direct self-DM link from full search landed on Slack’s DMs index during the probe. Cleanup returns through the verified starting conversation before revisiting the scoped anchor when appropriate. It closes the pane only after matching the submitting window and anchor and checking for intervening input. The fixtures exercise a late launcher, a stale pane during expansion, a missing or changed In filter, and a pane that predates submission.
+
+The scoped Notes Files retest returned three identified files. A self-scoped Messages search matched the existing synthetic message’s timestamp. The following People directory run and in-place read both succeeded and left `notes` with an empty composer and no stale panes, modal or sheet. The scoped sort menu uses its original control for dismissal when Slack omits its backdrop.
+
+Self-scoped Jump reached the exact synthetic message, and a separate rendered read matched its timestamp. A dry run confirmed the signed-in account and empty self-DM composer. After Jump, Slack remounted the old scoped pane on a later self-DM visit. The next search refused to close that pre-existing pane. The investigation closed the pane using its verified header before continuing in `notes`.
+
 ## Remaining live validation in priority order
 
 Run these checks in an exclusive main-mac Slack session after upload validation. Use the existing verified notes and self-DM aliases and record only counts, status codes, and verification outcomes.
@@ -65,7 +77,6 @@ Run these checks in an exclusive main-mac Slack session after upload validation.
 | Priority | Fixture and check | Expected evidence |
 | --- | --- | --- |
 | 1 | Take the generated file name and unique search token from upload validation. Reuse three approved synthetic messages containing that token in notes. Search for it with `--in notes` and then with `--type files --in notes`. | The three messages and the uploaded file appear in their respective searches. Compare their structural IDs with those observed at seeding and verify return to the starting conversation. |
-| 2 | Repeat a positive Messages search in the verified self-DM with `--open 0`. Retest scoped Files with the synthetic upload. | The exact self-DM message is rendered after Jump. The file result carries the expected filename and identifier, and the Files search restores the starting view. |
 | 3 | Search the DMs source for the self-DM token and the Canvases source for an approved synthetic canvas shared in notes. Search Channels for a known synthetic channel fixture at workspace scope. | Record positive results with structural IDs or explicit nulls. Leave any source pending until its fixture is available. |
 | 4 | Use a synthetic result set large enough to cross a client page boundary. Search within the designated conversation with small `--max-results` and `--max-pages` bounds, then repeat past the boundary. | Record whether the last-row action reveals another page, the true stop reason, ordering, duplication, and restoration. Report a stall or client-imposed limit if the end cannot be verified. |
 | 5 | Interrupt a notes search during a page transition once a multi-page fixture is available. | Exit 130, no results printed, and `doctor` plus an exact starting-conversation check succeed after cleanup. Record an explicit cleanup error if the client blocks restoration. |
