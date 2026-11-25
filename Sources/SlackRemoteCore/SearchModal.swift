@@ -58,7 +58,7 @@ public enum SearchModal {
         guard filters.conversation.map({ $0 == destination.conversation }) ?? true else {
             throw RemoteError.uiDrift(locator: Locators.searchFilter.name, found: 0)
         }
-        let view = try SlackWindow.verify(destination, in: tree)
+        let view = try SlackWindow.verifyForReading(destination, in: tree)
         let start = try SlackWindow.currentWindow(in: tree)
         guard start.location.destination == destination else {
             throw RemoteError.destinationMismatch(expected: destination, actual: start.location)
@@ -352,7 +352,7 @@ public enum SearchModal {
                 }
             }
             try tree.refresh()
-            guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
+            try Overlays.requireUnblockedForConversationRead(in: tree)
         } catch {
             throw RemoteError.overlayLeftOpen
         }

@@ -59,11 +59,16 @@ struct Read: ParsableCommand {
     }
 
     func run() throws {
-        try CommandSupport.run("read", options: options) { app, tree, deadline -> Previewable<Result> in
+        try CommandSupport.run("read", options: options, allowOverlays: thread == nil) {
+            app, tree, deadline -> Previewable<Result> in
             let destination: Destination
             let route: NavigationResult.Route
             let config = target.hasDestination ? try Config.load() : nil
             let idle = WriteCommand.idleCheck(target)
+            func verify(_ destination: Destination) throws -> VerifiedView {
+                if thread == nil { return try SlackWindow.verifyForReading(destination, in: tree) }
+                return try SlackWindow.verify(destination, in: tree)
+            }
             if let requested = try target.resolve(using: config) {
                 if dryRun, let thread {
                     return .preview(try DryRun.preview(.readThread(rootTs: thread, history: history, close: closeThread),
@@ -72,7 +77,8 @@ struct Read: ParsableCommand {
                 }
                 if thread != nil { try idle() }
                 destination = requested
-                route = try target.navigate(to: destination, app: app, in: tree, deadline: deadline).route
+                route = try target.navigate(to: destination, app: app, forReading: thread == nil,
+                                            in: tree, deadline: deadline).route
             } else {
                 let client = try SlackWindow.currentWindow(in: tree)
                 guard let current = client.location.destination else { throw RemoteError.slackNotReady }
@@ -80,7 +86,7 @@ struct Read: ParsableCommand {
                 route = .alreadyThere
             }
 
-            let view = try SlackWindow.verify(destination, in: tree)
+            let view = try verify(destination)
             if target.hasDestination {
                 _ = try Account.verify(team: destination.team, in: tree, config: config, access: .read,
                                        deadline: deadline, window: view.window, warn: app.warn)
@@ -107,7 +113,7 @@ struct Read: ParsableCommand {
                               scrollRestored: snapshot.scrollRestored, readAt: Date().ISO8601Format(),
                               skippedItems: snapshot.skippedItems, messages: snapshot.messages))
             }
-            let readView = try SlackWindow.verify(destination, in: tree)
+            let readView = try verify(destination)
             let webArea = try readView.window.one(Locators.webArea)
             guard Date() < deadline else { throw RemoteError.timeout }
             let (messages, skippedItems) = try MessageReader.read(readView, scope: scope, limit: limit)
@@ -128,7 +134,7 @@ struct Read: ParsableCommand {
                 _ = try ThreadView.verifyThread(destination, rootTs: pane.rootTs, in: tree)
                 if closeThread { try ThreadView.close(pane, in: tree, deadline: deadline, requireIdle: idle) }
             } else {
-                _ = try SlackWindow.verify(destination, in: tree)
+                _ = try verify(destination)
             }
             guard Date() < deadline else { throw RemoteError.timeout }
 

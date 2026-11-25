@@ -278,15 +278,15 @@ public enum SearchResults {
         try tree.withCleanup {
             do {
                 try tree.refresh()
-                guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
+                try Overlays.requireUnblockedForConversationRead(in: tree)
                 let current = try SlackWindow.currentWindow(in: tree)
                 if isFullSearch(current.location) || !current.window.all(Locators.scopedSearchHeader).isEmpty {
                     try clearActiveQuery(in: tree, deadline: tree.cleanupDeadline(after: 3))
                 }
                 try dismissScoped(in: tree, deadline: tree.cleanupDeadline(after: 4))
-                _ = try navigator.navigate(to: start, user: nil, interrupt: true, in: tree,
+                _ = try navigator.navigate(to: start, user: nil, interrupt: true, forReading: true, in: tree,
                                            deadline: tree.cleanupDeadline(after: 4))
-                let view = try SlackWindow.verify(start, in: tree)
+                let view = try SlackWindow.verifyForReading(start, in: tree)
                 guard view.window.all(Locators.scopedSearchHeader).isEmpty,
                       try SlackWindow.currentWindow(in: tree).location.destination == start else {
                     throw mismatch(start, in: tree)
