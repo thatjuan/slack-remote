@@ -20,7 +20,7 @@ struct Open: ParsableCommand {
     }
 
     func run() throws {
-        try CommandSupport.run("open", options: options) { app, tree, deadline in
+        try CommandSupport.run("open", options: options, allowOverlays: !dryRun) { app, tree, deadline in
             let config = try Config.load()
             let destination = try target.requireDestination(using: config)
             let output: Previewable<Result>
@@ -29,8 +29,9 @@ struct Open: ParsableCommand {
                                                     preference: target.route.preference, config: config,
                                                     in: tree, deadline: deadline, warn: app.warn))
             } else {
-                let navigation = try target.navigate(to: destination, app: app, in: tree, deadline: deadline)
-                let view = try SlackWindow.verify(destination, in: tree)
+                let navigation = try target.navigate(to: destination, app: app, forReading: true,
+                                                       in: tree, deadline: deadline)
+                let view = try SlackWindow.verifyForReading(destination, in: tree)
                 _ = try Account.verify(team: destination.team, in: tree, config: config, access: .read,
                                        deadline: deadline, window: view.window, warn: app.warn)
                 output = .actual(Result(team: destination.team.rawValue, conversation: destination.conversation.rawValue,

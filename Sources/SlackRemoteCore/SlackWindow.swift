@@ -44,6 +44,11 @@ public enum SlackWindow {
         try verify(destination, in: tree, allowingModalContaining: nil)
     }
 
+    public static func verifyForReading(_ destination: Destination, in tree: SlackTree) throws -> VerifiedView {
+        try Overlays.requireUnblockedForConversationRead(in: tree)
+        return try verifyDestination(destination, in: tree)
+    }
+
     static func verify(_ destination: Destination, in tree: SlackTree,
                        allowingModalContaining locator: Locator?) throws -> VerifiedView {
         if let locator {
@@ -55,6 +60,10 @@ public enum SlackWindow {
         } else {
             try Overlays.requireUnblocked(in: tree)
         }
+        return try verifyDestination(destination, in: tree)
+    }
+
+    static func verifyDestination(_ destination: Destination, in tree: SlackTree) throws -> VerifiedView {
         let clients = clientWindows(in: tree)
         let matching = clients.filter { client in
             client.locations.contains { $0.destination == destination }

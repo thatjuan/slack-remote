@@ -17,7 +17,11 @@ public enum History {
 
         func currentList() throws -> any UINode {
             try tree.refresh()
-            let view = try SlackWindow.verify(destination, in: tree)
+            let view: VerifiedView
+            switch scope {
+            case .primary: view = try SlackWindow.verifyForReading(destination, in: tree)
+            case .thread: view = try SlackWindow.verify(destination, in: tree)
+            }
             let list = try scope.list(in: view)
             try Composer.requireLiveDestination(view)
             try requireIdle()

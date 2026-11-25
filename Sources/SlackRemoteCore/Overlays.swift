@@ -12,6 +12,47 @@ public enum Overlays {
         guard open(in: tree).isEmpty else { throw RemoteError.uiBlocked }
     }
 
+    static func requireUnblockedForConversationRead(in tree: SlackTree) throws {
+        let overlays = open(in: tree)
+        if overlays.isEmpty { return }
+        guard overlays == [.modal], SlackWindow.clientWindows(in: tree).count == 1,
+              let client = try? SlackWindow.currentWindow(in: tree),
+              let destination = client.location.destination,
+              let view = try? SlackWindow.verifyDestination(destination, in: tree),
+              (try? Account.sidebarSelfDM(in: view.window)) == destination.conversation,
+              hasReadableSelfDM(view),
+              let webArea = try? view.window.one(Locators.webArea),
+              hasAttachmentPopover(in: webArea) else { throw RemoteError.uiBlocked }
+    }
+
+    private static func hasReadableSelfDM(_ view: VerifiedView) -> Bool {
+        let rows = view.window.all(Locators.sidebarRow)
+        let selected = rows.filter { $0.domClasses.contains(Locators.sidebarRowSelected) }
+        let exact = rows.filter { $0.domID == view.destination.conversation.rawValue }
+        guard selected.count == 1, selected.first?.domID == view.destination.conversation.rawValue,
+              exact.count == 1, let row = exact.first, let target = try? row.one(Locators.sidebarRowTarget),
+              target.bool(.enabled) == true, target.actionNames.contains(UIAction.press.rawValue),
+              let editor = try? view.primaryView.one(Locators.composerEditor), editor.bool(.enabled) == true else {
+            return false
+        }
+        return view.primaryView.all(Locators.messageList).count == 1
+            && view.primaryView.all(Locators.sendButton).count == 1
+    }
+
+    // Slack renders this attachment preview in a ReactModal portal without taking focus from the conversation.
+    private static func hasAttachmentPopover(in webArea: any UINode) -> Bool {
+        let backdrops = webArea.all(Locators.modalPortal).flatMap(\.children)
+            .filter(Locators.attachmentPopoverBackdrop.matches)
+        guard backdrops.count == 1, let backdrop = backdrops.first, backdrop.subrole == nil,
+              backdrop.children.count == 1, let popup = backdrop.children.first,
+              Locators.attachmentPopover.matches(popup), popup.subrole == nil,
+              popup.bool(.focused) == false, popup.node(.cancelButton) == nil,
+              popup.children.map(\.role) == ["AXLink", "AXStaticText", "AXStaticText"],
+              let link = popup.children.first, Locators.attachmentPopoverLink.matches(link),
+              link.children.map(\.role) == ["AXStaticText"] else { return false }
+        return !popup.descendants().contains { $0.bool(.focused) == true }
+    }
+
     /// Returns the expected control inside the sole blocking modal in the current window.
     static func requireOnlyModal(containing locator: Locator, in tree: SlackTree) throws -> any UINode {
         let window = try SlackWindow.currentWindow(in: tree).window

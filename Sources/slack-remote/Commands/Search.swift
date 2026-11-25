@@ -90,7 +90,8 @@ struct Search: ParsableCommand {
         var runningApp: SlackApp?
         var sessionTree: SlackTree?
         do {
-            let (app, output) = try CommandSupport.withSession(options: options, prepare: { try Config.load() }) {
+            let (app, output) = try CommandSupport.withSession(options: options, allowOverlays: true,
+                                                               prepare: { try Config.load() }) {
                 app, tree, deadline, config in
                 runningApp = app
                 sessionTree = tree
@@ -115,7 +116,7 @@ struct Search: ParsableCommand {
     private func search(using app: SlackApp, tree: SlackTree, deadline: Date, config: Config?) throws -> Output {
         let client = try SlackWindow.currentWindow(in: tree)
         guard let start = client.location.destination else { throw RemoteError.slackNotReady }
-        _ = try SlackWindow.verify(start, in: tree)
+        _ = try SlackWindow.verifyForReading(start, in: tree)
         try SearchResults.requireNoOpenResults(in: tree)
         let requested = try conversationFilter(using: config)
         let searchTeam = team ?? requested?.team ?? start.team
@@ -141,7 +142,8 @@ struct Search: ParsableCommand {
         return try SearchResults.restoring(start: start, in: tree, navigator: navigator,
                                            keepOnSuccess: open != nil) {
             if anchor != start {
-                _ = try navigator.navigate(to: anchor, user: nil, interrupt: interrupt, in: tree, deadline: deadline)
+                _ = try navigator.navigate(to: anchor, user: nil, interrupt: interrupt, forReading: true,
+                                           in: tree, deadline: deadline)
                 if searchTeam != start.team {
                     _ = try Account.verify(team: searchTeam, in: tree, config: config, access: .read,
                                            deadline: deadline, warn: app.warn)
