@@ -29,23 +29,33 @@ public enum Overlays {
     private static func closeModal(in tree: SlackTree, deadline: Date, within locator: Locator?) throws {
         do {
             try tree.refresh()
-            let window = try SlackWindow.currentWindow(in: tree).window
-            let scope: (any UINode)?
-            if let locator {
-                scope = try container(in: window, matching: locator)
-            } else {
-                scope = try selection(in: tree, window: window, within: nil)?.container
+            let original = try SlackWindow.currentWindow(in: tree)
+            func closeTarget(in window: any UINode) throws -> (scope: (any UINode)?, backdrop: (any UINode)?) {
+                let scope: (any UINode)?
+                if let locator {
+                    scope = try container(in: window, matching: locator)
+                } else {
+                    scope = try selection(in: tree, window: window, within: nil)?.container
+                }
+                let target = scope.flatMap {
+                    backdrop(in: window, scope: $0, within: locator, oneBlockingModal: open(in: tree) == [.modal])
+                }
+                return (scope, target)
             }
-            if let scope {
-                let backdrops = Locators.modalOverlay.matches(scope) ? [scope] : scope.all(Locators.modalOverlay)
-                let candidates = backdrops.filter { backdrop in
-                    backdrop.all(Locators.informationalTooltip).isEmpty
-                }
-                guard candidates.count == 1, let backdrop = candidates.first else {
-                    throw RemoteError.overlayLeftOpen
-                }
+            var target = try closeTarget(in: original.window)
+            // Search's filter can render before its backdrop. A fresh AX session exposes the owned backdrop.
+            if locator != nil, target.scope != nil, target.backdrop == nil, !open(in: tree).contains(.sheet),
+               let rebuild = tree.rebuildOwnedMode {
+                try rebuild(deadline)
+                let rebuilt = try SlackWindow.currentWindow(in: tree)
+                guard rebuilt.location == original.location else { throw RemoteError.overlayLeftOpen }
+                target = try closeTarget(in: rebuilt.window)
+            }
+            if let backdrop = target.backdrop {
                 // AX can report an error for a press that Slack already handled.
                 try? backdrop.perform(.press)
+            } else if target.scope != nil {
+                throw RemoteError.overlayLeftOpen
             }
 
             func primaryRestored() throws -> Bool {
@@ -140,5 +150,19 @@ public enum Overlays {
         let matches = window.all(locator)
         guard matches.count <= 1 else { throw RemoteError.uiDrift(locator: locator.name, found: matches.count) }
         return matches.first
+    }
+
+    private static func backdrop(in window: any UINode, scope: any UINode, within locator: Locator?,
+                                 oneBlockingModal: Bool) -> (any UINode)? {
+        if Locators.modalOverlay.matches(scope) { return scope }
+        let all = window.all(Locators.modalOverlay).filter { $0.all(Locators.informationalTooltip).isEmpty }
+        let scoped: [any UINode]
+        if let locator {
+            let associated = all.filter { $0.all(locator).count == 1 }
+            scoped = associated.isEmpty && oneBlockingModal ? all : associated
+        } else {
+            scoped = all
+        }
+        return scoped.count == 1 ? scoped.first : nil
     }
 }

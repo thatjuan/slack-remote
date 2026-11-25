@@ -47,11 +47,15 @@ public enum Locators {
                                                subrole: "AXUserInterfaceTooltip", classes: ["c-popover__content"])
     public static let selfDM = "p-channel_sidebar__channel--im-you"
     public static let searchButton = Locator(name: "searchButton", role: "AXButton", classes: ["p-top_nav__search"])
-    static let searchModal = Locator(name: "searchModal", role: "AXGroup", classes: ["c-search_modal"])
     public static let searchClear = Locator(name: "searchClear", role: "AXButton",
                                              classes: ["c-search__input_box__clear"])
     public static let selfFilterPrefix = "quick-filter-from-"
     public static let selfFilter = Locator(name: "selfFilter", role: "AXCheckBox", idPrefix: selfFilterPrefix)
+    // Slack can omit the search portal's classes in a live Accessibility session.
+    static let searchModal = Locator(name: "searchModal", role: "AXGroup", classes: [modalContent]) { child in
+        selfFilter.matches(child) || searchClear.matches(child)
+            || !child.all(selfFilter).isEmpty || !child.all(searchClear).isEmpty
+    }
 
     // Messages
     // Slack's outer screen-reader list directly contains virtual message items or spacers.
