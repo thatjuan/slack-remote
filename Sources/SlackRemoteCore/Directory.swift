@@ -68,7 +68,7 @@ public enum Directory {
 
     private static func withView<T>(_ view: View, team: TeamID, app: SlackApp, in tree: SlackTree,
                                     deadline: Date, _ body: () throws -> T) throws -> T {
-        try restoringConversation(app: app, in: tree) {
+        try restoringConversation(in: tree, navigator: Navigator(slackApp: app), directoryTeam: team) {
             try Environment.requireSlackIdle(interrupt: false)
             guard Date() < deadline else { throw RemoteError.timeout }
             let startingLocation = try SlackWindow.currentWindow(in: tree).location
@@ -213,26 +213,79 @@ public enum Directory {
         try restoringConversation(in: tree, navigator: Navigator(slackApp: app), body)
     }
 
-    static func restoringConversation<T>(in tree: SlackTree, navigator: Navigator,
+    static func restoringConversation<T>(in tree: SlackTree, navigator: Navigator, directoryTeam: TeamID? = nil,
+                                         secondsSinceUserInput: () -> Double = Environment.secondsSinceUserInput,
                                          _ body: () throws -> T) throws -> T {
         try tree.refresh()
         let start = try SlackWindow.currentWindow(in: tree)
         guard let destination = start.location.destination else { throw RemoteError.unsupportedDestination }
         _ = try SlackWindow.verify(destination, in: tree)
+        let enteredAt = ProcessInfo.processInfo.systemUptime
+        let trackScopedPane = directoryTeam != nil && start.window.all(Locators.scopedSearchHeader).isEmpty
+        let startingSelfDM = trackScopedPane ? try? Account.sidebarSelfDM(in: start.window) : nil
         let result = Result { try body() }
         try tree.refresh()
         guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
         let current = try SlackWindow.currentWindow(in: tree)
+        let returningFromDirectory = trackScopedPane && current.location.destination == nil
+            && current.location.team == directoryTeam && current.window.all(Locators.directoryTabPanel).count == 1
+            && current.window.all(Locators.scopedSearchHeader).isEmpty && sameWindow(start.window, current.window)
         if current.location != start.location {
             _ = try navigator.navigate(to: destination, user: nil, interrupt: true,
                                        in: tree, deadline: Date().addingTimeInterval(5))
         }
-        let restored = try SlackWindow.currentWindow(in: tree)
-        guard restored.location.destination == destination else {
-            throw RemoteError.destinationMismatch(expected: destination, actual: restored.location)
+
+        func restoredConversation() throws -> ClientWindow {
+            let restored = try SlackWindow.currentWindow(in: tree)
+            guard restored.location.destination == destination else {
+                throw RemoteError.destinationMismatch(expected: destination, actual: restored.location)
+            }
+            _ = try SlackWindow.verify(destination, in: tree)
+            return restored
         }
-        _ = try SlackWindow.verify(destination, in: tree)
+
+        var restored = try restoredConversation()
+        if trackScopedPane {
+            // Slack can render the old scoped pane just after the conversation returns.
+            let settle = Date().addingTimeInterval(0.2)
+            while returningFromDirectory, restored.window.all(Locators.scopedSearchHeader).isEmpty, Date() < settle {
+                Poll.wait(until: settle)
+                try tree.refresh()
+                restored = try restoredConversation()
+            }
+            if !restored.window.all(Locators.scopedSearchHeader).isEmpty {
+                func verifiedWindow(_ client: ClientWindow) throws -> any UINode {
+                    guard returningFromDirectory, client.location == start.location,
+                          sameWindow(start.window, client.window),
+                          let startingSelfDM, try Account.sidebarSelfDM(in: client.window) == startingSelfDM,
+                          secondsSinceUserInput() >= ProcessInfo.processInfo.systemUptime - enteredAt else {
+                        throw RemoteError.overlayLeftOpen
+                    }
+                    return client.window
+                }
+                do {
+                    let window = try verifiedWindow(restored)
+                    let panes = window.all(Locators.secondaryView).filter {
+                        !$0.all(Locators.scopedSearchHeader).isEmpty
+                    }
+                    guard panes.count == 1 else { throw RemoteError.overlayLeftOpen }
+                    try SearchResults.dismissScoped(in: window, deadline: tree.cleanupDeadline(after: 4)) {
+                        try tree.refresh()
+                        return try verifiedWindow(restoredConversation())
+                    }
+                } catch {
+                    throw RemoteError.overlayLeftOpen
+                }
+            }
+        }
         return try result.get()
+    }
+
+    private static func sameWindow(_ original: any UINode, _ current: any UINode) -> Bool {
+        if let original = original as? AXNode, let current = current as? AXNode {
+            return original.referencesSameElement(as: current)
+        }
+        return original as AnyObject === current as AnyObject
     }
 
     private static func openWorkspace(_ team: TeamID, app: SlackApp, in tree: SlackTree, deadline: Date) throws {

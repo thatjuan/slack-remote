@@ -31,8 +31,13 @@ final class ChannelBrowserFixture {
     let replacement = FakeNode(role: "AXGroup", domClasses: Locators.modalOverlay.classes, children: [
         FakeNode(role: "AXGroup", subrole: "AXApplicationDialog", domClasses: [Locators.modalContent]),
     ])
+    let searchClose = FakeNode(role: "AXButton", domClasses: Locators.scopedSearchClose.classes)
+    let searchPane = FakeNode(role: "AXGroup", domClasses: Locators.secondaryView.classes)
+    let unrelatedPane = FakeNode(role: "AXGroup", domClasses: Locators.secondaryView.classes)
     let tree: SlackTree
+    var onReturn: (() -> Void)?
     private let web: FakeNode
+    private let selfDM: FakeNode
     private let startingChildren: [any UINode]
     private let directory: FakeNode
     private(set) var links: [URL] = []
@@ -41,6 +46,8 @@ final class ChannelBrowserFixture {
         let window = SlackFixture.window()
         web = try XCTUnwrap(window.one(Locators.webArea) as? FakeNode)
         startingChildren = web.children
+        selfDM = try XCTUnwrap(window.all(Locators.sidebarRow).first { $0.domID == "D0CCCCCCC" } as? FakeNode)
+        selfDM.domClasses.append(Locators.selfDM)
         tree = SlackTree(windows: [window])
         let tab = FakeNode(role: "AXRadioButton", subrole: "AXTabButton",
                            domClasses: Locators.directoryTab.classes + [Locators.activeTabClass], domID: "channels")
@@ -70,6 +77,14 @@ final class ChannelBrowserFixture {
             web.children = startingChildren
         }
         browse.onPerform = { [weak self] _ in self?.arriveInDirectory() }
+        searchClose.actionNames = [UIAction.press.rawValue]
+        searchPane.children = [
+            FakeNode(role: "AXGroup", domClasses: Locators.scopedSearchHeader.classes, children: [searchClose]),
+        ]
+        searchClose.onPerform = { [weak self] _ in
+            guard let self else { return }
+            web.children.removeAll { $0 as AnyObject === self.searchPane }
+        }
     }
 
     func arriveInDirectory() {
@@ -82,11 +97,24 @@ final class ChannelBrowserFixture {
         web.children.append(replacement)
     }
 
+    func showSearchPane() {
+        web.children.append(searchPane)
+    }
+
+    func showUnrelatedPane() {
+        web.children.append(unrelatedPane)
+    }
+
+    func changeSelfDM() {
+        selfDM.domID = "D0DDDDDDD"
+    }
+
     func navigator() -> Navigator {
         Navigator(openLink: { [self] link in
             links.append(link)
             web.attributes[.url] = .string("https://app.slack.com/client/T0AAAAAAA/C0BBBBBBB")
             web.children = startingChildren
+            onReturn?()
         }, frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
     }
 
