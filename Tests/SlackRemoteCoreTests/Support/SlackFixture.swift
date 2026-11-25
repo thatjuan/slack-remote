@@ -5,7 +5,9 @@ enum SlackFixture {
                        sidebar: [String] = ["C0BBBBBBB", "D0CCCCCCC"], isMain: Bool = true) -> FakeNode {
         let rows = sidebar.map { id in
             let classes = Locators.sidebarRow.classes + (id == conversation ? [Locators.sidebarRowSelected] : [])
-            return FakeNode(role: "AXRow", subrole: "AXOutlineRow", domClasses: classes, domID: id)
+            let control = FakeNode(role: "AXGroup", subrole: "AXApplicationGroup",
+                                   domClasses: ["p-channel_sidebar__channel"])
+            return FakeNode(role: "AXRow", subrole: "AXOutlineRow", domClasses: classes, domID: id, children: [control])
         }
         let outline = FakeNode(role: "AXOutline", domClasses: ["c-virtual_list__scroll_container"], children: rows)
         let list = FakeNode(role: "AXList", subrole: "AXContentList")
