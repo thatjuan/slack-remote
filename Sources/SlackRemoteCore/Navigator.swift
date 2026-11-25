@@ -128,7 +128,15 @@ public struct Navigator {
         let rows = client.window.all(Locators.sidebarRow).filter { $0.domID == destination.conversation.rawValue }
         guard let row = rows.first else { throw RemoteError.destinationUnreachable }
         guard rows.count == 1 else { throw RemoteError.uiDrift(locator: Locators.sidebarRow.name, found: rows.count) }
+
+        // Slack exposes the row and its conversation control as separate AXPress targets.
+        let conversation = Locator(name: "sidebarConversation", role: "AXGroup", subrole: "AXApplicationGroup",
+                                   classes: ["p-channel_sidebar__channel"])
+        let controls = row.children.filter(conversation.matches)
+        guard controls.count == 1, let control = controls.first else {
+            throw RemoteError.uiDrift(locator: conversation.name, found: controls.count)
+        }
         guard Date() < deadline else { throw RemoteError.timeout }
-        try row.perform(.press)
+        try control.perform(.press)
     }
 }

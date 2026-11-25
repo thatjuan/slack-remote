@@ -43,16 +43,18 @@ struct NavigatorTests {
         #expect(links == [dm.userLink(user)])
     }
 
-    @Test func dmWithoutUserPressesTheSidebarRow() throws {
+    @Test func dmWithoutUserPressesTheSidebarConversationControl() throws {
         var window = SlackFixture.window()
         let tree = SlackTree(refresh: { [window] })
         let row = try #require(window.all(Locators.sidebarRow).first { $0.domID == dm.conversation.rawValue } as? FakeNode)
-        row.onPerform = { _ in window = SlackFixture.window(conversation: self.dm.conversation.rawValue) }
+        let control = try #require(row.children.first as? FakeNode)
+        control.onPerform = { _ in window = SlackFixture.window(conversation: self.dm.conversation.rawValue) }
         let navigator = navigator { _ in Issue.record("Sidebar navigation opened a link") }
         let result = try navigator.navigate(to: dm, user: nil, interrupt: false, in: tree,
                                             deadline: Date().addingTimeInterval(2))
         #expect(result.route == .sidebarRow)
-        #expect(row.performCalls == [.press])
+        #expect(row.performCalls.isEmpty)
+        #expect(control.performCalls == [.press])
     }
 
     @Test func missingRowIsUnreachable() {
@@ -62,6 +64,23 @@ struct NavigatorTests {
             try navigator.navigate(to: dm, user: nil, interrupt: false, in: tree, deadline: Date().addingTimeInterval(2))
         }
         #expect(error?.code == "destination_unreachable")
+    }
+
+    @Test func ambiguousSidebarControlsAreNeverPressed() throws {
+        let window = SlackFixture.window()
+        let row = try #require(window.all(Locators.sidebarRow).first { $0.domID == dm.conversation.rawValue } as? FakeNode)
+        let control = try #require(row.children.first as? FakeNode)
+        let extra = FakeNode(role: control.role, subrole: control.subrole, domClasses: control.domClasses)
+        row.children.append(extra)
+        let navigator = navigator { _ in Issue.record("Ambiguous sidebar controls triggered a link") }
+        let error = #expect(throws: RemoteError.self) {
+            try navigator.navigate(to: dm, user: nil, interrupt: false, in: SlackTree(windows: [window]),
+                                   deadline: Date().addingTimeInterval(2))
+        }
+        #expect(error?.code == "ui_drift")
+        #expect(row.performCalls.isEmpty)
+        #expect(control.performCalls.isEmpty)
+        #expect(extra.performCalls.isEmpty)
     }
 
     @Test func alreadyThereOpensNothingEvenWithRecentInput() throws {
