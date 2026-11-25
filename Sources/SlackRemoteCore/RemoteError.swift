@@ -27,9 +27,10 @@ public enum RemoteError: Error {
     case messageNotRendered
     case unsupportedDestination
     case writeNotAllowed
-    case fileRejected
+    case fileRejected(reason: String)
     case reactionUnconfirmed
     case uploadUnconfirmed
+    case interrupted
     case partialResult
     case accountMismatch
     case accountUnverified
@@ -68,6 +69,7 @@ public enum RemoteError: Error {
         case .fileRejected: return "file_rejected"
         case .reactionUnconfirmed: return "reaction_unconfirmed"
         case .uploadUnconfirmed: return "upload_unconfirmed"
+        case .interrupted: return "interrupted"
         case .partialResult: return "partial_result"
         case .accountMismatch: return "account_mismatch"
         case .accountUnverified: return "account_unverified"
@@ -89,6 +91,7 @@ public enum RemoteError: Error {
         case .timeout: return 18
         case .partialResult: return 19
         case .accountMismatch, .accountUnverified, .configInvalid: return 20
+        case .interrupted: return 130
         }
     }
 
@@ -130,7 +133,8 @@ public enum RemoteError: Error {
         case .writeNotAllowed: return "The destination is outside the configured write allowlist."
         case .fileRejected: return "Slack remote refused the supplied file."
         case .reactionUnconfirmed: return "The reaction change could not be confirmed."
-        case .uploadUnconfirmed: return "The upload could not be confirmed."
+        case .uploadUnconfirmed: return "The file may have been sent. Check the conversation before retrying."
+        case .interrupted: return "The operation was interrupted."
         case .partialResult: return "Paging stopped early. Pass --allow-partial to return the available items."
         case .accountMismatch: return "Slack's signed-in account differs from the configured account."
         case .accountUnverified: return "Slack's signed-in account could not be verified."
@@ -164,7 +168,7 @@ public enum RemoteError: Error {
                 "expectedConversation": .string(expected.conversation.rawValue),
                 "actual": .string(actual.diagnosticDescription),
             ]
-        case .unsafeText(let reason): return ["reason": .string(reason)]
+        case .unsafeText(let reason), .fileRejected(let reason): return ["reason": .string(reason)]
         case .draftConflict(let existingLength): return ["existingLength": .integer(existingLength)]
         case .writeFailed(let draftLeft), .writeUnverified(let draftLeft):
             return ["draftLeft": .boolean(draftLeft)]

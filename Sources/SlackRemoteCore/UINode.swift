@@ -1,8 +1,16 @@
+import Foundation
+
 public enum UIAttribute: String {
     case title = "AXTitle"
     case description = "AXDescription"
     case value = "AXValue"
     case url = "AXURL"
+    case filename = "AXFilename"
+    case selected = "AXSelected"
+    case selectedRows = "AXSelectedRows"
+    case selectedChildren = "AXSelectedChildren"
+    case cancelButton = "AXCancelButton"
+    case defaultButton = "AXDefaultButton"
     case enabled = "AXEnabled"
     case focused = "AXFocused"
     case main = "AXMain"
@@ -15,6 +23,7 @@ public enum UIAction: String {
     case press = "AXPress"
     case scrollToVisible = "AXScrollToVisible"
     case showMenu = "AXShowMenu"
+    case open = "AXOpen"
 }
 
 public enum UIValue: Equatable {
@@ -33,11 +42,22 @@ public protocol UINode {
     func isSettable(_ attribute: UIAttribute) -> Bool
     func string(_ attribute: UIAttribute) -> String?
     func bool(_ attribute: UIAttribute) -> Bool?
+    func node(_ attribute: UIAttribute) -> (any UINode)?
+    func nodes(_ attribute: UIAttribute) -> [any UINode]?
+    func setNodes(_ attribute: UIAttribute, to nodes: [any UINode]) throws
     func set(_ attribute: UIAttribute, to value: UIValue) throws
     func perform(_ action: UIAction) throws
 }
 
 public extension UINode {
+    var url: URL? { string(.url).flatMap(URL.init(string:)) }
+
+    func node(_ attribute: UIAttribute) -> (any UINode)? { nil }
+    func nodes(_ attribute: UIAttribute) -> [any UINode]? { nil }
+    func setNodes(_ attribute: UIAttribute, to nodes: [any UINode]) throws {
+        throw RemoteError.uiDrift(locator: attribute.rawValue, found: 0)
+    }
+
     /// Depth-first, document order, excluding self.
     func descendants() -> [any UINode] {
         var result: [any UINode] = []

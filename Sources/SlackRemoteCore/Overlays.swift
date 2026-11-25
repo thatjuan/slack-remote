@@ -80,6 +80,7 @@ public enum Overlays {
 
     /// Identify the caller's popup when Slack also displays an auxiliary dialog.
     static func withModal<T>(in tree: SlackTree, deadline: Date, within locator: Locator?,
+                             replacedBySheet: Bool = false,
                              opening: () throws -> Void, _ body: (any UINode) throws -> T) throws -> T {
         try tree.refresh()
         try requireUnblocked(in: tree)
@@ -97,19 +98,57 @@ public enum Overlays {
             return try body(modal)
         }
 
-        if observedModal {
-            try closeModal(in: tree, deadline: deadline, within: locator)
-        } else {
+        try tree.withCleanup {
             do {
                 try tree.refresh()
             } catch {
                 throw RemoteError.overlayLeftOpen
             }
-            if !open(in: tree).isEmpty {
-                try closeModal(in: tree, deadline: deadline, within: locator)
+            let overlays = open(in: tree)
+            if replacedBySheet, observedModal, overlays == [.sheet] { return }
+            if observedModal || !overlays.isEmpty {
+                try closeModal(in: tree, deadline: max(deadline, tree.cleanupDeadline(after: 2)), within: locator)
             }
         }
         return try result.get()
+    }
+
+    static func onlySheet(in tree: SlackTree) throws -> (any UINode)? {
+        let overlays = open(in: tree)
+        if overlays.isEmpty { return nil }
+        guard overlays == [.sheet] else { throw RemoteError.uiBlocked }
+        return try SlackWindow.currentWindow(in: tree).window.one(Locators.fileSheet)
+    }
+
+    /// Cancels the owned native file sheet, including after an interruption.
+    static func cancelSheet(in tree: SlackTree, deadline: Date) throws {
+        try tree.withCleanup {
+            do {
+                try tree.refresh()
+                guard let sheet = try onlySheet(in: tree) else { return }
+                let cancel = try sheetButton(.cancelButton, titled: "Cancel", in: sheet)
+                try? cancel.perform(.press)
+                let closed = try Poll.until(deadline) {
+                    try tree.refresh()
+                    return try onlySheet(in: tree) == nil ? true : nil
+                }
+                guard closed == true else { throw RemoteError.overlayLeftOpen }
+            } catch {
+                throw RemoteError.overlayLeftOpen
+            }
+        }
+    }
+
+    static func sheetButton(_ attribute: UIAttribute, titled title: String, in sheet: any UINode) throws -> any UINode {
+        if let button = sheet.node(attribute), button.role == "AXButton" { return button }
+        // The open panel on Slack 4.53.292 exposes titled controls below its split group.
+        let matches = sheet.descendants().filter { node in
+            node.role == "AXButton" && node.string(.title) == title
+        }
+        guard matches.count == 1, let button = matches.first else {
+            throw RemoteError.uiDrift(locator: attribute.rawValue, found: matches.count)
+        }
+        return button
     }
 
     static func kind(_ node: any UINode) -> OverlayKind? {

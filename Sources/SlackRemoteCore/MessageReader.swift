@@ -85,7 +85,8 @@ public enum MessageReader {
                 return parts.joined()
             }
             let hasAttachments = nodes.contains { node in
-                node.domClasses.contains { $0.hasPrefix(Locators.attachmentPrefix) }
+                Locators.sentFile.matches(node) || Locators.sentFileContainer.matches(node)
+                    || node.domClasses.contains { $0.hasPrefix(Locators.attachmentPrefix) }
             }
             let reactions = nodes.filter(Locators.reaction.matches).map { node in
                 let title = node.string(.title) ?? ""
