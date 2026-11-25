@@ -4,7 +4,7 @@
 slack-remote doctor [--grant] [--timeout SECONDS] [--debug]
 ```
 
-Checks the GUI session, screen lock, Accessibility permission, Slack process and visibility, tree readiness, selected client window, and expected locators. The result contains `checks`, each with `name`, `ok`, and optional `detail`. A failed check puts the results and the first error on stderr. See [Exit statuses](../scripting.md#exit-statuses).
+Reports whether the CLI is using SlackRemote.app, then checks the GUI session, screen lock, Accessibility permission, Slack process and visibility, tree readiness, selected client window, and expected locators. The result contains `checks`, each with `name`, `ok`, and optional `detail`. A failed check puts the results and the first error on stderr. [Exit statuses](../scripting.md#exit-statuses)
 
 The first check, `helper`, always reports `ok: true`. Its detail is `via SlackRemote.app <version>` when the helper runs the command, or `not used: <reason>` when the CLI runs it directly. The reasons are `disabled`, `not_installed`, and `not_running`.
 
