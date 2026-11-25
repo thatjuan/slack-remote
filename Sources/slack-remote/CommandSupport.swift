@@ -72,10 +72,12 @@ struct DestinationOptions: ParsableArguments {
         return destination
     }
 
-    func navigate(to destination: Destination, app: SlackApp, in tree: SlackTree, deadline: Date) throws
+    func navigate(to destination: Destination, app: SlackApp, forReading: Bool = false,
+                  in tree: SlackTree, deadline: Date) throws
         -> NavigationResult {
         try Navigator(slackApp: app).navigate(to: destination, user: user, interrupt: interrupt,
-                                              preference: route.preference, in: tree, deadline: deadline)
+                                              preference: route.preference, forReading: forReading,
+                                              in: tree, deadline: deadline)
     }
 }
 

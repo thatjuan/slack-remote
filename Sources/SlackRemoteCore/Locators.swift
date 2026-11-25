@@ -45,6 +45,15 @@ public enum Locators {
     public static let modalOverlay = Locator(name: "modalOverlay", role: "AXGroup", classes: ["ReactModal__Overlay"])
     static let informationalTooltip = Locator(name: "informationalTooltip", role: "AXGroup",
                                                subrole: "AXUserInterfaceTooltip", classes: ["c-popover__content"])
+    static let modalPortal = Locator(name: "modalPortal", role: "AXGroup", classes: ["ReactModalPortal"])
+    static let attachmentPopoverBackdrop = Locator(name: "attachmentPopoverBackdrop", role: "AXGroup",
+        classes: modalOverlay.classes + ["ReactModal__Overlay--after-open", "c-popover", "c-popover--z_modal",
+                                        "c-popover--fade", "c-popover--no-pointer"])
+    static let attachmentPopover = Locator(name: "attachmentPopover", role: "AXGroup",
+        classes: [modalContent, "ReactModal__Content--after-open", "popover", "c-popover__content",
+                  "c-popover__content--interactive"])
+    static let attachmentPopoverLink = Locator(name: "attachmentPopoverLink", role: "AXLink",
+        classes: ["c-link", "c-link--underline-inherit", "c-message_attachment__title_link"])
     public static let selfDM = "p-channel_sidebar__channel--im-you"
     public static let searchButton = Locator(name: "searchButton", role: "AXButton", classes: ["p-top_nav__search"])
     public static let searchClear = Locator(name: "searchClear", role: "AXButton",
