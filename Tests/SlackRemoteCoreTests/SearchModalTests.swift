@@ -66,7 +66,7 @@ struct SearchModalTests {
                 fixture.didWriteQuery = { #expect(tree.requestInterruption()) }
                 defer { fixture.didWriteQuery = nil }
                 try SearchResults.restoring(start: fixture.destination, in: tree, navigator: navigator,
-                                            keepOnSuccess: false) {
+                                            keepOnSuccess: false) { _ in
                     try fixture.run(in: tree)
                 }
             }
@@ -83,7 +83,7 @@ struct SearchModalTests {
         var replacement: (clear: FakeNode, backdrop: FakeNode)?
         let failure = #expect(throws: RemoteError.self) {
             try SearchResults.restoring(start: fixture.destination, in: fixture.tree, navigator: navigator,
-                                        keepOnSuccess: false) {
+                                        keepOnSuccess: false) { _ in
                 try fixture.run(onOpen: {
                     replacement = fixture.replaceSearchPopup()
                     #expect(fixture.tree.requestInterruption())
@@ -118,7 +118,7 @@ struct SearchModalTests {
 
         #expect(throws: SlackTree.Interruption.self) {
             try SearchResults.restoring(start: fixture.destination, in: tree, navigator: navigator,
-                                        keepOnSuccess: false) {
+                                        keepOnSuccess: false) { _ in
                 try fixture.run(in: tree, onOpen: { Issue.record("Search did not own the popup before SIGINT") })
             }
         }
@@ -146,7 +146,7 @@ struct SearchModalTests {
 
         #expect(throws: SlackTree.Interruption.self) {
             try SearchResults.restoring(start: fixture.destination, in: tree, navigator: navigator,
-                                        keepOnSuccess: false) {
+                                        keepOnSuccess: false) { _ in
                 try fixture.run(in: tree, onOpen: {
                     interrupted = true
                     #expect(tree.requestInterruption())
@@ -174,7 +174,7 @@ struct SearchModalTests {
 
         #expect(throws: SlackTree.Interruption.self) {
             try SearchResults.restoring(start: fixture.destination, in: fixture.tree, navigator: navigator,
-                                        keepOnSuccess: false) {
+                                        keepOnSuccess: false) { _ in
                 try fixture.run(onOpen: { #expect(fixture.tree.requestInterruption()) })
             }
         }
@@ -192,7 +192,7 @@ struct SearchModalTests {
                                   frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
         let failure = #expect(throws: RemoteError.self) {
             try SearchResults.restoring(start: fixture.destination, in: fixture.tree, navigator: navigator,
-                                        keepOnSuccess: false) { try fixture.run() }
+                                        keepOnSuccess: false) { _ in try fixture.run() }
         }
         #expect(failure?.code == "ax_failure")
         #expect(fixture.submit.performCalls.isEmpty)

@@ -199,6 +199,10 @@ final class SearchResultsFixture {
     func navigate(to destination: Destination, with message: String? = nil) throws {
         web.attributes[.url] = .string("https://app.slack.com/client/\(destination.team.rawValue)/\(destination.conversation.rawValue)")
         web.children = conversationNodes
+        for row in web.all(Locators.sidebarRow).compactMap({ $0 as? FakeNode }) {
+            row.domClasses.removeAll { $0 == Locators.sidebarRowSelected }
+            if row.domID == destination.conversation.rawValue { row.domClasses.append(Locators.sidebarRowSelected) }
+        }
         if let message {
             let primary = try #require(web.one(Locators.primaryView) as? FakeNode)
             primary.children.append(FakeNode(role: "AXGroup", domClasses: ["c-virtual_list__item"],
@@ -208,10 +212,47 @@ final class SearchResultsFixture {
 
     func showScopedResults(in destination: Destination) {
         web.attributes[.url] = .string("https://app.slack.com/client/\(destination.team.rawValue)/\(destination.conversation.rawValue)")
+        if !web.children.contains(where: { $0 as AnyObject === root }) { web.children.append(root) }
     }
 
-    func showConversationFilter() {
-        root.children.append(FakeNode(role: "AXButton", domClasses: [Locators.searchFilterActive], domID: "filter-in"))
+    func showFullResults() {
+        web.attributes[.url] = .string("https://app.slack.com/client/T0AAAAAAA/search")
+        web.children = [root]
+    }
+
+    @discardableResult
+    func showConversationFilter(title: String? = nil) -> FakeNode {
+        let control = FakeNode(role: "AXButton", domClasses: [Locators.searchFilterActive], domID: "filter-in")
+        control.attributes[.title] = title.map(UIValue.string)
+        root.children.append(control)
+        return control
+    }
+
+    func showEmptyScopedPane() throws -> FakeNode {
+        list.children = [FakeNode(role: "AXGroup", domID: Locators.scopedSearchEmptyID)]
+        let header = try #require(root.one(Locators.scopedSearchHeader) as? FakeNode)
+        let back = FakeNode(role: "AXButton", domClasses: Locators.scopedSearchClose.classes)
+        back.actionNames = ["AXPress"]
+        header.children.insert(FakeNode(role: "AXGroup", children: [back]), at: 0)
+        return back
+    }
+
+    func lateLauncher(to full: SearchResultsFixture) -> (tree: SlackTree, launcher: FakeNode) {
+        let launcher = FakeNode(role: "AXButton", domClasses: Locators.scopedSearchExpand.classes)
+        launcher.actionNames = ["AXPress"]
+        let actions = FakeNode(role: "AXGroup", domClasses: Locators.scopedSearchActions.classes, children: [launcher])
+        var snapshots = 0
+        let tree = SlackTree(refresh: { [self] in
+            snapshots += 1
+            if snapshots == 4 { root.children.append(actions) }
+            return [window]
+        })
+        launcher.onPerform = { [self] _ in
+            web.attributes[.url] = .string("https://app.slack.com/client/T0AAAAAAA/search")
+            // Slack can leave the old pane onscreen while the full URL and result root arrive.
+            web.children.append(full.root)
+        }
+        return (tree, launcher)
     }
 
     @discardableResult

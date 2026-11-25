@@ -52,6 +52,7 @@ public enum SearchModal {
     public static func run<T>(query: String, filters: Filters, from destination: Destination,
                               account: Account?, in tree: SlackTree, deadline: Date,
                               onOpen: () -> Void = {},
+                              onSubmit: (ClientWindow) throws -> Void = { _ in },
                               read: () throws -> T) throws -> T {
         try validate(query)
         try tree.refresh()
@@ -60,6 +61,7 @@ public enum SearchModal {
         }
         let view = try SlackWindow.verifyForReading(destination, in: tree)
         let start = try SlackWindow.currentWindow(in: tree)
+        try SearchResults.requireNoOpenResults(in: tree)
         guard start.location.destination == destination else {
             throw RemoteError.destinationMismatch(expected: destination, actual: start.location)
         }
@@ -171,6 +173,11 @@ public enum SearchModal {
                 return selected.first
             }) else { throw RemoteError.uiDrift(locator: "searchSubmit", found: 0) }
             try tree.checkInterruption()
+            let submitting = try SlackWindow.currentWindow(in: tree)
+            guard start.location == submitting.location, SearchPopup(node: start.window).matches(submitting.window),
+                  submitting.window.all(Locators.scopedSearchHeader).isEmpty else { throw RemoteError.overlayLeftOpen }
+            // The popup can hide the account sidebar. Keep the verified pre-popup window for ownership.
+            try onSubmit(start)
             try submit.perform(.press)
             submitted = true
             return try read()

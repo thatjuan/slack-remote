@@ -141,7 +141,7 @@ struct Search: ParsableCommand {
                                          hasLink: hasLink, threadsOnly: threadsOnly)
 
         return try SearchResults.restoring(start: start, in: tree, navigator: navigator,
-                                           keepOnSuccess: open != nil) {
+                                           keepOnSuccess: open != nil, scopedAnchor: requested) { recordSubmission in
             if anchor != start {
                 _ = try navigator.navigate(to: anchor, user: nil, interrupt: interrupt, forReading: true,
                                            in: tree, deadline: deadline)
@@ -153,7 +153,7 @@ struct Search: ParsableCommand {
             let snapshot = try SearchModal.run(query: query, filters: filters, from: anchor, account: account,
                                                 in: tree, deadline: deadline, onOpen: {
                 if options.debug { CommandSupport.debug("Search modal opened") }
-            }) {
+            }, onSubmit: recordSubmission) {
                 try SearchResults.read(type: type, team: searchTeam, conversation: requested?.conversation, in: tree,
                                        bounds: PageBounds(maxItems: maxResults, maxPages: maxPages, deadline: deadline),
                                        allowPartial: allowPartial, onReady: {

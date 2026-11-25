@@ -13,6 +13,8 @@ Without a conversation filter, `--team` uses the current conversation in that wo
 
 The default type is `messages`. Use `--in NAME` or `--in-team TEAM --in-channel CHANNEL` to search a specific channel or self-DM. Slack can provide additional types through its Sources menu. Look in `availableTypes` for the current choices. An empty channel search may expose only messages.
 
+Scoped Files uses Slack’s **View in Search** control when search opens in a conversation pane. If Slack exposes only the scoped empty pane or the full Files view loses the verified In filter, the command returns `unsupported_destination`.
+
 People and Channels are workspace-scoped sources. Run them without `--in`, the explicit conversation flags, or a Slack `in:` modifier. Add `--team TEAM` if you need to switch workspaces.
 
 ```sh

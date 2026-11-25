@@ -81,6 +81,37 @@ struct SearchResultsTests {
         #expect(Overlays.open(in: fixture.tree).isEmpty)
     }
 
+    @Test func waitsForScopedLauncherThenUsesFullSearchWithAnOldPaneStillVisible() throws {
+        let scoped = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)], atEnd: false)
+        scoped.showScopedResults(in: Fixture.result)
+        let full = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+        full.showConversationFilter(title: "In: fixture")
+        let transition = scoped.lateLauncher(to: full)
+        let snapshot = try SearchResults.read(type: "files", team: Fixture.team, conversation: Fixture.result.conversation,
+                                              in: transition.tree, bounds: .init(maxItems: 10, maxPages: 2,
+                                                                                 deadline: Date().addingTimeInterval(2)),
+                                              allowPartial: false)
+        #expect(transition.launcher.performCalls == [.press])
+        #expect(snapshot.results.map(\.content) == [.file("F0DDDDDDD", name: "fixture.txt", conversation: nil)])
+    }
+
+    @Test func changedOrMissingInFilterWithholdsFilesEvenAfterTheSourceIsReady() throws {
+        for removesFilter in [false, true] {
+            let fixture = try Fixture(rows: [Fixture.message(Fixture.firstTimestamp)])
+            let filter = fixture.showConversationFilter(title: "In: fixture")
+            let error = #expect(throws: SearchResults.UnsupportedType.self) {
+                try SearchResults.read(type: "files", team: Fixture.team, conversation: Fixture.result.conversation,
+                                       in: fixture.tree, bounds: .init(maxItems: 10, maxPages: 2,
+                                                                       deadline: Date().addingTimeInterval(2)),
+                                       allowPartial: true, onReady: {
+                    if removesFilter { filter.domClasses = [] }
+                    else { filter.attributes[.title] = .string("In: other") }
+                })
+            }
+            #expect(error?.requiresUnscopedSearch == true)
+        }
+    }
+
     @Test func doesNotTreatDisplayedTextAsAnID() throws {
         let row = Fixture.row(id: nil, sender: "Ada", text: "search-message-G0FFFFFFF-1700000000.000100")
         let fixture = try Fixture(rows: [row])
@@ -156,9 +187,14 @@ struct SearchResultsTests {
 
     @Test func restoresTheStartingConversationAfterSearchFails() throws {
         let fixture = try Fixture(rows: [])
+        try fixture.navigate(to: Fixture.start)
         let error = #expect(throws: RemoteError.self) {
             try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: fixture.navigator(),
-                                        keepOnSuccess: true) { throw RemoteError.partialResult }
+                                        keepOnSuccess: true, secondsSinceUserInput: { .infinity }) { submit in
+                try submit(SlackWindow.currentWindow(in: fixture.tree))
+                fixture.showFullResults()
+                throw RemoteError.partialResult
+            }
         }
         #expect(error?.code == "partial_result")
         #expect(fixture.links == [Fixture.start.channelLink])
@@ -168,7 +204,7 @@ struct SearchResultsTests {
     @Test func interruptionWhileReadingResultsClosesThePaneAndRestoresTheStartingConversation() throws {
         let row = Fixture.message(Fixture.firstTimestamp)
         let fixture = try Fixture(rows: [row], atEnd: false)
-        fixture.showScopedResults(in: Fixture.result)
+        try fixture.navigate(to: Fixture.start)
         row.onPerform = { action in
             #expect(action == .scrollToVisible)
             #expect(fixture.tree.requestInterruption())
@@ -176,7 +212,12 @@ struct SearchResultsTests {
 
         #expect(throws: SlackTree.Interruption.self) {
             try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: fixture.navigator(),
-                                        keepOnSuccess: true) { try fixture.read() }
+                                        keepOnSuccess: true, secondsSinceUserInput: { .infinity }) { submit in
+                try fixture.navigate(to: Fixture.result)
+                try submit(SlackWindow.currentWindow(in: fixture.tree))
+                fixture.showScopedResults(in: Fixture.result)
+                return try fixture.read()
+            }
         }
         #expect(row.performCalls == [.scrollToVisible])
         #expect(fixture.scopedClose?.performCalls == [.press])
@@ -184,13 +225,80 @@ struct SearchResultsTests {
         #expect(try SlackWindow.currentWindow(in: fixture.tree).location.destination == Fixture.start)
     }
 
+    @Test func emptyScopedFilesClosesOnlyTheDirectHeaderControlAndRestoresNotes() throws {
+        let fixture = try Fixture(rows: [], atEnd: false)
+        try fixture.navigate(to: Fixture.start)
+        let back = try fixture.showEmptyScopedPane()
+        let error = #expect(throws: SearchResults.UnsupportedType.self) {
+            try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: fixture.navigator(),
+                                        keepOnSuccess: false, secondsSinceUserInput: { .infinity }) { submit in
+                try fixture.navigate(to: Fixture.result)
+                try submit(SlackWindow.currentWindow(in: fixture.tree))
+                fixture.showScopedResults(in: Fixture.result)
+                return try fixture.read(type: "files", conversation: Fixture.result.conversation)
+            }
+        }
+        #expect(error?.available == ["messages"])
+        #expect(fixture.scopedClose?.performCalls == [.press])
+        #expect(back.performCalls.isEmpty)
+        #expect(fixture.links == [Fixture.start.channelLink])
+        #expect(try SlackWindow.currentWindow(in: fixture.tree).location.destination == Fixture.start)
+    }
+
+    @Test func failedTransitionLeavesAnUnownedScopedPaneUntouched() throws {
+        let fixture = try Fixture(rows: [], atEnd: false)
+        try fixture.navigate(to: Fixture.start)
+        let error = #expect(throws: RemoteError.self) {
+            try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: fixture.navigator(),
+                                        keepOnSuccess: false, secondsSinceUserInput: { .infinity }) { _ in
+                fixture.showScopedResults(in: Fixture.result)
+                throw RemoteError.partialResult
+            }
+        }
+        #expect(error?.code == "overlay_left_open")
+        #expect(fixture.scopedClose?.performCalls.isEmpty == true)
+        #expect(fixture.links.isEmpty)
+    }
+
+    @Test func fullSearchClosesTheRemountedOwnedPaneBeforeReturningToNotes() throws {
+        let fixture = try Fixture(rows: [], atEnd: false)
+        try fixture.navigate(to: Fixture.start)
+        var links: [URL] = []
+        let navigator = Navigator(openLink: { link in
+            links.append(link)
+            if link == Fixture.result.channelLink {
+                try fixture.navigate(to: Fixture.result)
+                fixture.showScopedResults(in: Fixture.result)
+            } else {
+                try fixture.navigate(to: Fixture.start)
+            }
+        }, frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
+        let result = try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: navigator,
+                                                 keepOnSuccess: false, scopedAnchor: Fixture.result,
+                                                 secondsSinceUserInput: { .infinity }) { submit in
+            try fixture.navigate(to: Fixture.result)
+            try submit(SlackWindow.currentWindow(in: fixture.tree))
+            fixture.showFullResults()
+            return true
+        }
+        #expect(result)
+        #expect(fixture.scopedClose?.performCalls == [.press])
+        #expect(links == [Fixture.start.channelLink, Fixture.result.channelLink, Fixture.start.channelLink])
+        #expect(try SlackWindow.currentWindow(in: fixture.tree).location.destination == Fixture.start)
+    }
+
     @Test func withholdsResultsWhenRestorationCannotBeVerified() throws {
         let fixture = try Fixture(rows: [])
+        try fixture.navigate(to: Fixture.start)
         let navigator = Navigator(openLink: { _ in throw RemoteError.internalError(operation: "fixture") },
                                   frontmostBundleID: { nil }, activate: { _ in }, secondsSinceUserInput: { .infinity })
         let error = #expect(throws: RemoteError.self) {
             try SearchResults.restoring(start: Fixture.start, in: fixture.tree, navigator: navigator,
-                                        keepOnSuccess: false) { try fixture.read() }
+                                        keepOnSuccess: false, secondsSinceUserInput: { .infinity }) { submit in
+                try submit(SlackWindow.currentWindow(in: fixture.tree))
+                fixture.showFullResults()
+                return try fixture.read()
+            }
         }
         #expect(error?.code == "destination_mismatch")
     }

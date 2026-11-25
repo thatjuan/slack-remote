@@ -96,6 +96,14 @@ public enum SearchResults {
             case .other: return false
             }
         }
+
+        var conversation: ConversationID? {
+            switch self {
+            case .message(let identity, _, _): identity?.conversation
+            case .file(_, _, let conversation): conversation
+            default: nil
+            }
+        }
     }
 
     enum RowKey: Hashable {
@@ -132,14 +140,19 @@ public enum SearchResults {
 
     public static func read(type: String, team: TeamID, conversation: ConversationID? = nil, in tree: SlackTree,
                             bounds: PageBounds, allowPartial: Bool, onReady: () -> Void = {}) throws -> Snapshot {
-        guard var initial = try Poll.until(bounds.deadline, { try loaded(team: team, in: tree) }) else {
+        guard var initial = try Poll.until(bounds.deadline, {
+            try loaded(team: team, in: tree, waitForScopedLauncher: type != "messages")
+        }) else {
             throw RemoteError.timeout
         }
         if let scope = initial.scope {
             if let conversation, scope.conversation != conversation { throw mismatch(Destination(team: team, conversation: conversation), in: tree) }
-            let launchers = initial.root.all(Locators.scopedSearchActions).flatMap { $0.all(Locators.scopedSearchExpand) }
+            let launchers = scopedLaunchers(in: initial.root)
             guard launchers.count <= 1 else { throw RemoteError.uiDrift(locator: Locators.scopedSearchExpand.name, found: launchers.count) }
             if let expand = launchers.first {
+                guard expand.actionNames.contains(UIAction.press.rawValue) else {
+                    throw RemoteError.uiDrift(locator: Locators.scopedSearchExpand.name, found: 0)
+                }
                 guard Date() < bounds.deadline else { throw RemoteError.timeout }
                 try tree.checkInterruption()
                 try expand.perform(.press)
@@ -150,7 +163,11 @@ public enum SearchResults {
                 initial = full
             }
         }
-        let requiresConversationScope = conversation != nil || hasConversationFilter(in: initial.root)
+        let initialFilter = conversationFilter(in: initial.root)
+        let requiresConversationScope = conversation != nil || initialFilter != nil
+        if requiresConversationScope, initial.scope == nil, initialFilter == nil {
+            throw UnsupportedType(available: initial.types, requiresUnscopedSearch: true)
+        }
         let available: [String]
         if initial.tabs.isEmpty, initial.scope == nil, !initial.root.all(Locators.searchSources).isEmpty {
             available = try selectSource(type, team: team, conversation: conversation, in: tree,
@@ -171,12 +188,24 @@ public enum SearchResults {
             try tab.control.perform(.press)
         }
         guard let ready = try Poll.until(bounds.deadline, {
-            guard let view = try loaded(team: team, in: tree, type: type), view.isSelected(type) else { return nil as View? }
+            guard let view = try loaded(team: team, in: tree, type: type), view.isSelected(type),
+                  type == "messages" || view.scope == nil else { return nil as View? }
             return view
         }) else { throw RemoteError.timeout }
-        if requiresConversationScope, ready.scope == nil, !hasConversationFilter(in: ready.root) {
-            throw UnsupportedType(available: available, requiresUnscopedSearch: true)
+        func requireRetainedScope(in view: View) throws {
+            guard requiresConversationScope else { return }
+            if let scope = view.scope {
+                if let conversation, scope.conversation != conversation {
+                    throw mismatch(Destination(team: team, conversation: conversation), in: tree)
+                }
+            } else {
+                guard let initialFilter, let currentFilter = conversationFilter(in: view.root),
+                      initialFilter.matches(currentFilter) else {
+                    throw UnsupportedType(available: available, requiresUnscopedSearch: true)
+                }
+            }
         }
+        try requireRetainedScope(in: ready)
         let sort = try readSort(in: ready, tree: tree, deadline: bounds.deadline)
         onReady()
         var atEnd = false
@@ -184,10 +213,11 @@ public enum SearchResults {
             guard let view = try current(team: team, in: tree), view.isSelected(type), view.scope == ready.scope else {
                 throw RemoteError.uiDrift(locator: Locators.searchResults.name, found: 0)
             }
+            try requireRetainedScope(in: view)
             let rows = try rendered(type: type, in: view)
             if let conversation {
                 for row in rows {
-                    if case .message(let identity?, _, _) = row.item.content, identity.conversation != conversation {
+                    if let observed = row.item.content.conversation, observed != conversation {
                         throw mismatch(Destination(team: team, conversation: conversation), in: tree)
                     }
                 }
@@ -269,29 +299,95 @@ public enum SearchResults {
 
     /// Results, including partial results and errors, are held until the starting view is verified.
     public static func restoring<T>(start: Destination, in tree: SlackTree, navigator: Navigator,
-                                    keepOnSuccess: Bool, _ work: () throws -> T) throws -> T {
+                                    keepOnSuccess: Bool,
+                                    scopedAnchor: Destination? = nil,
+                                    secondsSinceUserInput: () -> Double = Environment.secondsSinceUserInput,
+                                    _ work: ((ClientWindow) throws -> Void) throws -> T) throws -> T {
+        let original = try SlackWindow.currentWindow(in: tree)
+        guard original.location.destination == start else { throw mismatch(start, in: tree) }
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        var submitted: (client: ClientWindow, selfDM: ConversationID?)?
         tree.unwindOnSignal = true
         let outcome = Result {
             try tree.checkInterruption()
-            return try work()
+            return try work { client in
+                submitted = (client, try Account.sidebarSelfDM(in: client.window))
+            }
         }
         if keepOnSuccess, !tree.interruptionRequested, case .success = outcome { return try outcome.get() }
         try tree.withCleanup {
             do {
-                try tree.refresh()
-                try Overlays.requireUnblockedForConversationRead(in: tree)
-                let current = try SlackWindow.currentWindow(in: tree)
-                if isFullSearch(current.location) || !current.window.all(Locators.scopedSearchHeader).isEmpty {
-                    try clearActiveQuery(in: tree, deadline: tree.cleanupDeadline(after: 3))
+                func currentClient() throws -> ClientWindow {
+                    try tree.refresh()
+                    try Overlays.requireUnblockedForConversationRead(in: tree)
+                    return try SlackWindow.currentWindow(in: tree)
                 }
-                try dismissScoped(in: tree, deadline: tree.cleanupDeadline(after: 4))
-                if try SlackWindow.currentWindow(in: tree).location.destination != start {
+                func requireNoNewInput() throws {
+                    guard secondsSinceUserInput() >= ProcessInfo.processInfo.systemUptime - startedAt else {
+                        throw RemoteError.overlayLeftOpen
+                    }
+                }
+                func ownedWindow(_ current: ClientWindow) throws -> any UINode {
+                    try requireNoNewInput()
+                    guard let submitted, SearchPopup(node: submitted.client.window).matches(current.window),
+                          current.location.team == submitted.client.location.team else { throw RemoteError.overlayLeftOpen }
+                    if !isFullSearch(current.location) {
+                        guard current.location == submitted.client.location,
+                              try Account.sidebarSelfDM(in: current.window) == submitted.selfDM else {
+                            throw RemoteError.overlayLeftOpen
+                        }
+                    }
+                    return current.window
+                }
+                var current = try currentClient()
+                if isFullSearch(current.location) || !current.window.all(Locators.scopedSearchHeader).isEmpty {
+                    _ = try ownedWindow(current)
+                    let returningFromFullScope = isFullSearch(current.location)
+                        && scopedAnchor != nil && submitted?.client.location.destination == scopedAnchor
+                    try clearActiveQuery(in: tree, deadline: tree.cleanupDeadline(after: 3))
+                    current = try currentClient()
+                    if returningFromFullScope, let scopedAnchor {
+                        if current.location.destination != scopedAnchor {
+                            try requireNoNewInput()
+                            guard SearchPopup(node: original.window).matches(current.window) else {
+                                throw RemoteError.overlayLeftOpen
+                            }
+                            // A self-DM link from full search can land on Slack's DMs index.
+                            // Restore the verified conversation before revisiting the scoped anchor.
+                            if current.location.destination == nil, scopedAnchor != start {
+                                _ = try navigator.navigate(to: start, user: nil, interrupt: true, forReading: true,
+                                                           in: tree, deadline: tree.cleanupDeadline(after: 4))
+                                try requireNoNewInput()
+                            }
+                            _ = try navigator.navigate(to: scopedAnchor, user: nil, interrupt: true, forReading: true,
+                                                       in: tree, deadline: tree.cleanupDeadline(after: 4))
+                            current = try currentClient()
+                        }
+                        // Slack can remount the owned scoped pane after leaving full search.
+                        let settle = Date().addingTimeInterval(0.2)
+                        while current.window.all(Locators.scopedSearchHeader).isEmpty, Date() < settle {
+                            Poll.wait(until: settle)
+                            current = try currentClient()
+                        }
+                        _ = try ownedWindow(current)
+                    }
+                    if !current.window.all(Locators.scopedSearchHeader).isEmpty {
+                        try dismissScoped(in: ownedWindow(current), deadline: tree.cleanupDeadline(after: 4)) {
+                            try ownedWindow(currentClient())
+                        }
+                        current = try currentClient()
+                    }
+                }
+                guard SearchPopup(node: original.window).matches(current.window) else { throw RemoteError.overlayLeftOpen }
+                if current.location != original.location {
+                    try requireNoNewInput()
                     _ = try navigator.navigate(to: start, user: nil, interrupt: true, forReading: true, in: tree,
                                                deadline: tree.cleanupDeadline(after: 4))
                 }
                 let view = try SlackWindow.verifyForReading(start, in: tree)
                 guard view.window.all(Locators.scopedSearchHeader).isEmpty,
-                      try SlackWindow.currentWindow(in: tree).location.destination == start else {
+                      SearchPopup(node: original.window).matches(view.window),
+                      try SlackWindow.currentWindow(in: tree).location == original.location else {
                     throw mismatch(start, in: tree)
                 }
             } catch let error as RemoteError where error.code == "overlay_left_open" || error.code == "ui_blocked" {
@@ -315,7 +411,7 @@ public enum SearchResults {
         let matchedPanes = client.window.all(Locators.secondaryView).filter {
             !$0.all(Locators.scopedSearchHeader).isEmpty
         }
-        if !matchedPanes.isEmpty {
+        if !isFullSearch(client.location), !matchedPanes.isEmpty {
             guard matchedPanes.count == 1, let pane = matchedPanes.first,
                   let destination = client.location.destination, destination.team == team else {
                 throw RemoteError.uiDrift(locator: Locators.scopedSearchHeader.name, found: matchedPanes.count)
@@ -343,10 +439,20 @@ public enum SearchResults {
         return false
     }
 
-    private static func hasConversationFilter(in root: any UINode) -> Bool {
-        root.descendants().contains {
-            $0.domID == "filter-in" && $0.domClasses.contains(Locators.searchFilterActive)
+    private struct ConversationFilter {
+        let control: any UINode
+        let title: String?
+
+        func matches(_ other: Self) -> Bool {
+            title == other.title && SearchPopup(node: control).matches(other.control)
         }
+    }
+
+    private static func conversationFilter(in root: any UINode) -> ConversationFilter? {
+        let matches = root.descendants().filter { $0.role == "AXButton" && $0.domID == "filter-in" }
+        guard matches.count == 1, let control = matches.first,
+              control.domClasses.contains(Locators.searchFilterActive) else { return nil }
+        return ConversationFilter(control: control, title: control.string(.title).flatMap { $0.isEmpty ? nil : $0 })
     }
 
     private static func requireSupportedScope(for type: String, available: [String], conversation: ConversationID?,
@@ -552,12 +658,20 @@ public enum SearchResults {
         guard try dismissed(until: deadline) else { throw RemoteError.overlayLeftOpen }
     }
 
-    private static func loaded(team: TeamID, in tree: SlackTree, type: String = "messages") throws -> View? {
+    private static func scopedLaunchers(in root: any UINode) -> [any UINode] {
+        root.all(Locators.scopedSearchActions).flatMap { $0.all(Locators.scopedSearchExpand) }
+    }
+
+    private static func loaded(team: TeamID, in tree: SlackTree, type: String = "messages",
+                               waitForScopedLauncher: Bool = false) throws -> View? {
         guard let view = try current(team: team, in: tree) else { return nil }
         if view.scope != nil {
             let lists = view.root.all(Locators.scopedSearchList) + view.root.all(Locators.scopedSearchMatches)
             guard lists.count == 1, let list = lists.first,
                   !list.children.contains(where: { $0.domID == Locators.scopedSearchLoadingID }) else { return nil }
+            // The results pane can mount before its scoped View in Search control.
+            if waitForScopedLauncher, scopedLaunchers(in: view.root).isEmpty,
+               !view.root.descendants().contains(where: { $0.domID == Locators.scopedSearchEmptyID }) { return nil }
         } else if type == "people", let cards = try peopleCards(in: view.root), !cards.isEmpty {
             return view
         } else if view.root.all(Locators.searchResultList).isEmpty
@@ -583,9 +697,10 @@ public enum SearchResults {
         guard header.count == 1, let root = header.first else {
             throw RemoteError.uiDrift(locator: Locators.scopedSearchHeader.name, found: header.count)
         }
-        let close = try root.one(Locators.scopedSearchClose)
-        guard close.actionNames.contains(UIAction.press.rawValue) else {
-            throw RemoteError.uiDrift(locator: Locators.scopedSearchClose.name, found: 0)
+        // The nested Back control shares the icon button classes with Close.
+        let candidates = root.children.filter(Locators.scopedSearchClose.matches)
+        guard candidates.count == 1, let close = candidates.first, close.actionNames.contains(UIAction.press.rawValue) else {
+            throw RemoteError.uiDrift(locator: Locators.scopedSearchClose.name, found: candidates.count)
         }
         guard Date() < deadline else { throw RemoteError.overlayLeftOpen }
         try? close.perform(.press)
