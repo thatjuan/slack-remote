@@ -37,3 +37,9 @@ The release build, all 49 tests, and `git diff --check` passed. The send fixture
 | Sender identity | The four sender controls exposed display labels. None had a user ID as its Accessibility DOM identifier, and the rendered tree had no observed own-message class. A display label alone could not verify the signed-in sender. |
 | CLI draft set, draft conflict, exact clear, and live send | Skipped. The verified composer held text. The original probe token was never recorded, so the full contents could not be matched to the probe. The existing draft was left in place, and this run made zero send presses. |
 | Second destination | Skipped. The designated channel remained unresolved. |
+
+## Self-DM write preflight
+
+The isolated 1.0.0 install from `06b6094520c58ef597fbe96f60f663258d341384` passed all eight `doctor` checks on main-mac. In `notes`, `whoami` matched the private fixture's workspace, signed-in user, and self-DM. After opening `self`, a separate locked Accessibility snapshot matched the client URL, selected sidebar row, and signed-in self-DM marker. It found one primary message list, editor, and send control. The editor was blank, Send was disabled, and there were zero pending files or sidebar draft markers.
+
+Slack rendered one blocking attachment preview, with zero sheets or secondary panes. The preview exposed no dedicated close or cancel control. The run left it untouched and skipped draft set, conflict and exact clear, send, upload, and the corresponding positive self-scoped search. The CLI returned to the original `notes` view. A separate snapshot verified the destination, an empty composer, and zero blocking overlays, sheets, or secondary panes.

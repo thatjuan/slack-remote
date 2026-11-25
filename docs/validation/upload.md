@@ -22,7 +22,7 @@ The live route was `file_paste`. The command cancels the panel before trying Pas
 | Check | Outcome |
 | --- | --- |
 | Dry run | Reported the generated file size, verified account and empty composer. The channel remained selected and no staging directory appeared. |
-| Self-DM upload | Skipped to preserve an existing draft and recurring popover in that destination. |
+| Self-DM upload | Skipped. The latest preflight verified a blank editor and zero pending files, but Slack still showed a blocking attachment preview. The run staged no file. [Self-DM write preflight](write.md#self-dm-write-preflight) |
 | Channel upload with caption | The first command returned `upload_unconfirmed`. A follow-up read found one message with the generated caption and exact attachment name. The reader now recognizes the rendered upload classes `c-message_kit__file` and `p-message_file`. The original send was not retried. |
 | Thread upload | The CLI returned `sent: true` with `file_paste`. The receipt timestamp appeared in the verified thread and was absent from the channel list. The test closed the thread pane. |
 | Draft conflict | Tested in the designated channel to preserve the self-DM draft. Upload returned `draft_conflict`, and exact-text clear then removed the generated draft. |
