@@ -69,14 +69,19 @@ public struct Navigator {
     }
 
     public func navigate(to destination: Destination, user: UserID?, interrupt: Bool,
-                         preference: RoutePreference = .auto,
+                         preference: RoutePreference = .auto, forReading: Bool = false,
                          in tree: SlackTree, deadline: Date) throws -> NavigationResult {
+        func requireUnblocked() throws {
+            if forReading { try Overlays.requireUnblockedForConversationRead(in: tree) }
+            else { try Overlays.requireUnblocked(in: tree) }
+        }
+
         guard Date() < deadline else { throw RemoteError.timeout }
         try tree.refresh()
-        try Overlays.requireUnblocked(in: tree)
+        try requireUnblocked()
         var lastLocation: ClientLocation
         do {
-            _ = try SlackWindow.verify(destination, in: tree)
+            _ = try SlackWindow.verifyDestination(destination, in: tree)
             guard Date() < deadline else { throw RemoteError.timeout }
             if preference == .auto { return NavigationResult(route: .alreadyThere, focusRestored: false) }
             lastLocation = .conversation(destination, trailing: [])
@@ -114,9 +119,10 @@ public struct Navigator {
         var previousShape: [Int]?
         let settled: Bool? = try Poll.until(deadline) {
             try tree.refresh()
-            guard Overlays.open(in: tree).isEmpty else { throw RemoteError.overlayLeftOpen }
+            do { try requireUnblocked() }
+            catch { throw RemoteError.overlayLeftOpen }
             do {
-                _ = try SlackWindow.verify(destination, in: tree)
+                _ = try SlackWindow.verifyDestination(destination, in: tree)
                 lastLocation = .conversation(destination, trailing: [])
                 let shape = tree.shape()
                 defer { previousShape = shape }
