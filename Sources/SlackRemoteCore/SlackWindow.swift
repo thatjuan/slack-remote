@@ -41,7 +41,20 @@ public enum SlackWindow {
 
     /// Require the exact workspace and conversation, then check the window structure and sidebar selection.
     public static func verify(_ destination: Destination, in tree: SlackTree) throws -> VerifiedView {
-        try Overlays.requireUnblocked(in: tree)
+        try verify(destination, in: tree, allowingModalContaining: nil)
+    }
+
+    static func verify(_ destination: Destination, in tree: SlackTree,
+                       allowingModalContaining locator: Locator?) throws -> VerifiedView {
+        if let locator {
+            _ = try Overlays.requireOnlyModal(containing: locator, in: tree)
+            let current = try currentWindow(in: tree)
+            guard current.location.destination == destination else {
+                throw RemoteError.destinationMismatch(expected: destination, actual: current.location)
+            }
+        } else {
+            try Overlays.requireUnblocked(in: tree)
+        }
         let clients = clientWindows(in: tree)
         let matching = clients.filter { client in
             client.locations.contains { $0.destination == destination }

@@ -11,19 +11,21 @@ public enum History {
     }
 
     public static func read(_ destination: Destination, in tree: SlackTree, since: String?,
-                            bounds: PageBounds, allowPartial: Bool) throws -> Snapshot {
+                            bounds: PageBounds, allowPartial: Bool, scope: MessageScope = .primary,
+                            requireIdle: () throws -> Void = {}) throws -> Snapshot {
         var skipped: Set<String> = []
 
         func currentList() throws -> any UINode {
             try tree.refresh()
             let view = try SlackWindow.verify(destination, in: tree)
-            let list = try view.primaryView.one(Locators.messageList)
+            let list = try scope.list(in: view)
             try Composer.requireLiveDestination(view)
+            try requireIdle()
             return list
         }
 
         let paged = try VirtualListPager.collect(direction: .towardStart, bounds: bounds, rendered: {
-            let rendered = MessageReader.readList(try currentList())
+            let rendered = MessageReader.readList(try currentList(), scope: scope)
             skipped.formUnion(rendered.skipped)
             return rendered.rows
         }, reachedBoundary: { message in
@@ -34,11 +36,16 @@ public enum History {
         let newest = ordered.last?.ts
         let scrollRestored: Bool
         let list = try currentList()
-        let spacers = list.children.filter { $0.domID == Locators.messageListBottomID }
+        let endID: String
+        switch scope {
+        case .primary: endID = Locators.messageListBottomID
+        case .thread(let thread): endID = thread.itemPrefix + "input"
+        }
+        let spacers = list.children.filter { $0.domID == endID }
         if let newest, spacers.count == 1, let spacer = spacers.first {
             try? spacer.perform(.scrollToVisible)
-            let restored: Bool? = try Poll.until(Date().addingTimeInterval(2)) {
-                let visible = MessageReader.readList(try currentList()).rows
+            let restored: Bool? = try Poll.until(min(bounds.deadline, Date().addingTimeInterval(2))) {
+                let visible = MessageReader.readList(try currentList(), scope: scope).rows
                 return visible.contains { $0.key == newest } ? true : nil
             }
             scrollRestored = restored == true

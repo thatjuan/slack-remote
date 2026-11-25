@@ -12,6 +12,15 @@ public enum Overlays {
         guard open(in: tree).isEmpty else { throw RemoteError.uiBlocked }
     }
 
+    /// Returns the expected control inside the sole blocking modal in the current window.
+    static func requireOnlyModal(containing locator: Locator, in tree: SlackTree) throws -> any UINode {
+        let window = try SlackWindow.currentWindow(in: tree).window
+        guard let modal = try selection(in: tree, window: window, within: nil)?.content else {
+            throw RemoteError.uiDrift(locator: locator.name, found: 0)
+        }
+        return try modal.one(locator)
+    }
+
     /// Closes a modal owned by the caller and waits for the primary view to return.
     public static func closeModal(in tree: SlackTree, deadline: Date) throws {
         try closeModal(in: tree, deadline: deadline, within: nil)

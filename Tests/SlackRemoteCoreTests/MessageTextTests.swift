@@ -8,6 +8,8 @@ struct MessageTextTests {
         ("example\u{0007}", "control_character"),
         ("\t /status", "slash_command"),
         ("+:tada: \n", "reaction_shortcut"),
+        ("example :Tada:", "invalid_emoji_name"),
+        ("example :bad/name:", "invalid_emoji_name"),
         ("Good morning @ChAnNeL", "broadcast_mention"),
     ])
     func refusesUnsafeText(_ text: String, reason: String) {
@@ -21,6 +23,11 @@ struct MessageTextTests {
 
     @Test func allowBroadcastPermitsHere() throws {
         try MessageText.validate("Hello @here", allowBroadcast: true)
+    }
+
+    @Test func acceptsShortcodesUnicodeEmojiAndURLsWithPorts() throws {
+        try MessageText.validate("Example :tada: 🎉 :+1: https://localhost:8080/path", allowBroadcast: false)
+        #expect(MessageText.normalize("🎉") != MessageText.normalize(":tada:"))
     }
 
     @Test func normalizesLineEndingsTrailingNewlineAndUnicode() {

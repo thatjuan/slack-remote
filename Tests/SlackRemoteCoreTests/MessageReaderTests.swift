@@ -36,6 +36,21 @@ struct MessageReaderTests {
         #expect(result.messages.map(\.text) == ["Read the report today."])
     }
 
+    @Test func emitsNamedEmojiInPlaceAndMarksAnOmittedEmoji() throws {
+        let named = FakeNode(role: "AXImage", domClasses: ["c-emoji"], attributes: [.title: .string(":tada:")])
+        let unnamed = FakeNode(role: "AXImage", domClasses: ["c-emoji"], attributes: [.title: .string("Emoji")])
+        let result = try read([
+            MessageFixtures.message(0, sections: [[MessageFixtures.text("Before "), named, MessageFixtures.text(" after")]]),
+            MessageFixtures.message(1, sections: [[MessageFixtures.text("Unnamed"), unnamed]]),
+        ])
+        #expect(result.messages.map(\.text) == ["Before :tada: after", "Unnamed"])
+        #expect(result.messages.map(\.emojiOmitted) == [false, true])
+        let data = try JSONEncoder().encode(result.messages)
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        #expect(json[0]["emojiOmitted"] == nil)
+        #expect(json[1]["emojiOmitted"] as? Bool == true)
+    }
+
     @Test func inheritsOnlyAnAvailableSender() throws {
         let result = try read([
             MessageFixtures.message(0),

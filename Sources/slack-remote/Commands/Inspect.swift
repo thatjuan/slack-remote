@@ -10,6 +10,7 @@ struct Inspect: ParsableCommand {
     @OptionGroup var options: CommandOptions
     @Option(help: "Accessibility subtree to inspect.") var scope: Inspector.Scope = .window
     @Option(help: "Maximum depth below the scope root.") var maxDepth: Int?
+    @Flag(help: "Show shortcode titles on emoji images.") var emojiNames = false
 
     func validate() throws {
         if let maxDepth, maxDepth < 0 { throw ValidationError("--max-depth must be zero or greater.") }
@@ -20,7 +21,7 @@ struct Inspect: ParsableCommand {
             try FileHandle.standardOutput.write(contentsOf: Data(result.utf8))
         }) { _, tree, _ in
             let window = try SlackWindow.currentWindow(in: tree).window
-            return Inspector.describe(window, scope: scope, maxDepth: maxDepth)
+            return Inspector.describe(window, scope: scope, maxDepth: maxDepth, emojiNames: emojiNames)
         }
     }
 }

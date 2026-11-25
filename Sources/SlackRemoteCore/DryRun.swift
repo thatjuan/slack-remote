@@ -6,6 +6,9 @@ public struct DryRun: Encodable {
         case draftSet(String)
         case draftClear(String)
         case send(String)
+        case readThread(rootTs: String, history: Bool, close: Bool)
+        case reply(rootTs: String, text: String, broadcast: Bool)
+        case react(ts: String, thread: String?)
     }
 
     public enum ComposerStatus: String, Encodable { case empty, text, pending, unknown }
@@ -24,7 +27,7 @@ public struct DryRun: Encodable {
                                warn: (String) -> Void = { _ in }) throws -> DryRun {
         let access: Account.Access
         switch operation {
-        case .open: access = .read
+        case .open, .readThread: access = .read
         default:
             access = .dryRunWrite
             try config?.requireWriteAllowed(to: destination)
@@ -43,9 +46,20 @@ public struct DryRun: Encodable {
         plan.append("verify destination")
         if atDestination {
             let view = try SlackWindow.verify(destination, in: tree)
-            let controls = try Composer(view: view).controls(in: view)
-            state = try controls.state()
-            sendEnabled = controls.enabled
+            let scope: MessageScope?
+            switch operation {
+            case .reply(let rootTs, _, _):
+                scope = (try? ThreadView.verify(rootTs: rootTs, in: view)).map(MessageScope.thread)
+            case .readThread, .react:
+                scope = nil
+            default:
+                scope = .primary
+            }
+            if let scope {
+                let controls = try Composer(view: view, scope: scope, in: nil, methods: .live).controls(in: view)
+                state = try controls.state()
+                sendEnabled = controls.enabled
+            }
             try Composer.requireLiveDestination(view)
         } else if preference == .sidebar {
             try Navigator.requireSidebarTarget(for: destination, in: client)
@@ -71,6 +85,25 @@ public struct DryRun: Encodable {
                 plan.append("write text (\(text.count) characters)")
             }
             plan += ["final gate", "press send once", "confirm message"]
+        case .readThread(let rootTs, let history, let close):
+            plan.append("open and verify thread \(rootTs)")
+            plan.append(history ? "page thread history" : "read rendered thread")
+            if close { plan.append("close verified thread") }
+        case .reply(let rootTs, let text, let broadcast):
+            plan.append("open and verify thread \(rootTs)")
+            try requireCompatibleDraft(state, text: text)
+            if state == .text(MessageText.normalize(text)) {
+                guard sendEnabled == true else { throw RemoteError.writeUnverified(draftLeft: true) }
+                plan.append("reuse matching thread draft")
+            } else {
+                plan.append("write text (\(text.count) characters)")
+            }
+            plan += [broadcast ? "verify broadcast enabled" : "verify broadcast disabled",
+                     "final gate", "press send once", "confirm reply"]
+        case .react(let ts, let rootTs):
+            if let rootTs { plan.append("open and verify thread \(rootTs)") }
+            plan += ["locate message \(ts)", "check existing reactions", "open emoji picker",
+                     "verify message and exact emoji cell", "press emoji once if needed", "confirm reaction"]
         }
         let composer: ComposerStatus
         switch state {
