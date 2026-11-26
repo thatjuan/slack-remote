@@ -22,11 +22,16 @@ let package = Package(
             "SlackRemoteCore",
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ]),
-        .executableTarget(name: "SlackRemoteHelper", dependencies: ["SlackRemoteCore"], linkerSettings: [
+        .target(name: "SlackRemoteWeb", dependencies: ["SlackRemoteCore"], linkerSettings: [
+            .linkedFramework("WebKit"),
+            .linkedFramework("AppKit"),
+        ]),
+        .executableTarget(name: "SlackRemoteHelper", dependencies: ["SlackRemoteCore", "SlackRemoteWeb"], linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("ServiceManagement"),
         ]),
         .testTarget(name: "SlackRemoteCoreTests", dependencies: ["SlackRemoteCore"]),
+        .testTarget(name: "SlackRemoteWebTests", dependencies: ["SlackRemoteWeb"]),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -26,6 +26,29 @@ struct HelperServerTests {
         }
     }
 
+    @Test(arguments: ["webkit-poc", "other"])
+    func routesOnlyPoCRequestsInProcess(_ command: String) throws {
+        try withServer(script: "exit 7", inProcess: { request in
+            (Data(request.arguments.joined(separator: " ").utf8), Data("test error".utf8), 12)
+        }) { server, root, socket in
+            let arguments = [command, "accounts"]
+            #expect(HelperForwarding.shouldForward(arguments: arguments, noHelper: nil))
+            try socket.send(.request(request(root, arguments: arguments)))
+            let result = try readResult(socket)
+            if command == "webkit-poc" {
+                #expect(result.stdout == Data("webkit-poc accounts".utf8))
+                #expect(result.stderr == Data("test error".utf8))
+                #expect(result.status == 12)
+            } else {
+                #expect(result.stdout.isEmpty)
+                #expect(result.stderr.isEmpty)
+                #expect(result.status == 7)
+            }
+            #expect(server.lastCommand?.name == command)
+            #expect(server.lastCommand?.status == result.status)
+        }
+    }
+
     @Test func forwardsSignalToRunner() throws {
         try withServer(script: """
             trap 'echo interrupted; exit 130' INT
@@ -83,7 +106,8 @@ struct HelperServerTests {
         .init(clientVersion: Self.version, arguments: arguments, workingDirectory: root.path, passesFile: passesFile)
     }
 
-    private func withServer(script: String, _ work: (HelperServer, URL, HelperSocket) throws -> Void) throws {
+    private func withServer(script: String, inProcess: HelperServer.InProcessHandler? = nil,
+                            _ work: (HelperServer, URL, HelperSocket) throws -> Void) throws {
         let files = FileManager.default
         var template = Array(files.temporaryDirectory.appendingPathComponent("hXXXXXX").path.utf8CString)
         let path = try template.withUnsafeMutableBufferPointer { buffer in
@@ -96,7 +120,8 @@ struct HelperServerTests {
         try Data("#!/bin/sh\n\(script)\n".utf8).write(to: runner)
         try #require(chmod(runner.path, 0o700) == 0)
         let socketURL = root.appendingPathComponent("s")
-        let server = try HelperServer(socketURL: socketURL, runnerURL: runner, version: Self.version)
+        let server = try HelperServer(socketURL: socketURL, runnerURL: runner,
+                                      version: Self.version, inProcess: inProcess)
         defer { server.stop() }
         let socket = try HelperSocket.connect(to: socketURL)
         defer { socket.disconnect() }

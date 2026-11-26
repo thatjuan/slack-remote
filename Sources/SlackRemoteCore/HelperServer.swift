@@ -1,8 +1,12 @@
 import Darwin
 import Foundation
+import os
 import Security
 
 public final class HelperServer: @unchecked Sendable {
+    public typealias InProcessHandler = @Sendable (HelperProtocol.Request) async
+        -> (stdout: Data, stderr: Data, status: Int32)
+
     public struct LastCommand {
         public let name: String
         public let status: Int32
@@ -12,6 +16,7 @@ public final class HelperServer: @unchecked Sendable {
     private let listener: DispatchSourceRead
     private let runnerURL: URL
     private let version: String
+    private let inProcess: InProcessHandler?
     private let peerRequirement: SecRequirement?
     private let lock = NSLock()
     private var last: LastCommand?
@@ -20,10 +25,12 @@ public final class HelperServer: @unchecked Sendable {
 
     public init(socketURL: URL = HelperProtocol.socketURL,
                 runnerURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/slack-remote"),
-                version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+                version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+                inProcess: InProcessHandler? = nil)
         throws {
         self.runnerURL = runnerURL
         self.version = version
+        self.inProcess = inProcess
         peerRequirement = try Self.signingRequirement()
 
         let directory = socketURL.deletingLastPathComponent()
@@ -114,21 +121,29 @@ public final class HelperServer: @unchecked Sendable {
         }
         do {
             guard let (request, file) = try connection.receiveRequest() else { return }
-            let runner: HelperRunner
-            do {
-                defer { if let file { close(file) } }
-                guard request.protocolVersion == HelperProtocol.version, request.clientVersion == version else {
-                    try connection.send(.rejected("version_mismatch"))
-                    return
-                }
+            guard request.protocolVersion == HelperProtocol.version, request.clientVersion == version else {
+                if let file { close(file) }
+                try connection.send(.rejected("version_mismatch"))
+                return
+            }
+            let status: Int32
+            if request.arguments.first == "webkit-poc", let inProcess {
+                if let file { close(file) }
+                let result = runInProcess(inProcess, request: request)
+                try connection.send(.stdout(result.stdout))
+                try connection.send(.stderr(result.stderr))
+                status = result.status
+            } else {
+                let runner: HelperRunner
                 do {
+                    defer { if let file { close(file) } }
                     runner = try HelperRunner.spawn(at: runnerURL, request: request, file: file, version: version)
                 } catch {
                     try connection.send(.rejected("spawn_failed"))
                     return
                 }
+                status = runner.stream(to: connection)
             }
-            let status = runner.stream(to: connection)
             lock.withLock {
                 last = LastCommand(name: request.arguments.first ?? "", status: status, time: Date())
             }
@@ -136,6 +151,19 @@ public final class HelperServer: @unchecked Sendable {
         } catch {
             connection.disconnect()
         }
+    }
+
+    private func runInProcess(_ handler: @escaping InProcessHandler, request: HelperProtocol.Request)
+        -> (stdout: Data, stderr: Data, status: Int32) {
+        let ready = DispatchSemaphore(value: 0)
+        let result = OSAllocatedUnfairLock(initialState: (stdout: Data(), stderr: Data(), status: Int32(1)))
+        Task {
+            let output = await handler(request)
+            result.withLock { $0 = output }
+            ready.signal()
+        }
+        ready.wait()
+        return result.withLock { $0 }
     }
 
     private static func signingRequirement() throws -> SecRequirement? {

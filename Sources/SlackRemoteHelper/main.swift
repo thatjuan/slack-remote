@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 import SlackRemoteCore
+import SlackRemoteWeb
 
 if CommandLine.arguments.dropFirst() == ["--unregister"] {
     let login = SMAppService.mainApp
@@ -13,9 +14,15 @@ if CommandLine.arguments.dropFirst() == ["--unregister"] {
         NSLog("SlackRemote could not unregister Open at Login: %@", error.localizedDescription)
         exit(EXIT_FAILURE)
     }
-} else if let server = try? HelperServer() {
-    let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
-    let statusMenu = StatusMenu(server: server)
-    withExtendedLifetime(statusMenu) { app.run() }
+} else {
+    MainActor.assumeIsolated {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let webKitPoC = WebKitPoC()
+        if let server = try? HelperServer(inProcess: { request in await webKitPoC.handle(request) }) {
+            webKitPoC.restoreAccounts()
+            let statusMenu = StatusMenu(server: server, webKitPoC: webKitPoC)
+            withExtendedLifetime(statusMenu) { app.run() }
+        }
+    }
 }
