@@ -46,6 +46,20 @@ struct HelperServerTests {
         }
     }
 
+    @Test func routesPoCCommandsInProcess() throws {
+        try withServer(script: "exit 7", inProcess: { request in
+            (Data(request.arguments.joined(separator: " ").utf8), Data("test stderr".utf8), 3)
+        }) { server, root, socket in
+            try socket.send(.request(request(root, arguments: ["webkit-poc", "accounts"])))
+            let result = try readResult(socket)
+            #expect(result.stdout == Data("webkit-poc accounts".utf8))
+            #expect(result.stderr == Data("test stderr".utf8))
+            #expect(result.status == 3)
+            #expect(server.lastCommand?.name == "webkit-poc")
+            #expect(server.lastCommand?.status == 3)
+        }
+    }
+
     @Test(arguments: [true, false])
     func rejectsVersionMismatch(_ wrongProtocol: Bool) throws {
         try withServer(script: "exit 7") { server, root, socket in
@@ -83,7 +97,11 @@ struct HelperServerTests {
         .init(clientVersion: Self.version, arguments: arguments, workingDirectory: root.path, passesFile: passesFile)
     }
 
-    private func withServer(script: String, _ work: (HelperServer, URL, HelperSocket) throws -> Void) throws {
+    private func withServer(
+        script: String,
+        inProcess: (@Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32))? = nil,
+        _ work: (HelperServer, URL, HelperSocket) throws -> Void
+    ) throws {
         let files = FileManager.default
         var template = Array(files.temporaryDirectory.appendingPathComponent("hXXXXXX").path.utf8CString)
         let path = try template.withUnsafeMutableBufferPointer { buffer in
@@ -96,7 +114,7 @@ struct HelperServerTests {
         try Data("#!/bin/sh\n\(script)\n".utf8).write(to: runner)
         try #require(chmod(runner.path, 0o700) == 0)
         let socketURL = root.appendingPathComponent("s")
-        let server = try HelperServer(socketURL: socketURL, runnerURL: runner, version: Self.version)
+        let server = try HelperServer(socketURL: socketURL, runnerURL: runner, version: Self.version, inProcess: inProcess)
         defer { server.stop() }
         let socket = try HelperSocket.connect(to: socketURL)
         defer { socket.disconnect() }
