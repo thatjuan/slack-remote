@@ -13,9 +13,6 @@ let package = Package(
     ],
     targets: [
         .target(name: "SlackRemoteCore", linkerSettings: [
-            .linkedFramework("ApplicationServices"),
-            .linkedFramework("AppKit"),
-            .linkedFramework("CoreGraphics"),
             .linkedFramework("Security"),
         ]),
         .executableTarget(name: "slack-remote", dependencies: [

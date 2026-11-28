@@ -44,4 +44,3 @@ else
     printf 'Already absent %s\n' "$target"
 fi
 printf 'Kept %s\n' "$HOME/.config/slack-remote" "$HOME/Library/Application Support/slack-remote"
-printf 'You can remove the Accessibility entry for SlackRemote in System Settings.\n'

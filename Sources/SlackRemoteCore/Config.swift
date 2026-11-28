@@ -2,7 +2,6 @@ import Darwin
 import Foundation
 
 public struct Config: Codable {
-    public var accounts: [Account] = []
     public var destinations: [String: Destination] = [:]
     public var restrictWritesToDestinations = false
 
@@ -43,13 +42,32 @@ public struct Config: Codable {
         }
     }
 
-    // Replace atomically using a private temporary file in the same directory.
+    /// Serializes destination edits within this config directory to avoid losing concurrent updates.
+    public static func setDestination(_ destination: Destination, named name: String,
+                                      deadline: Date, at url: URL = fileURL) throws -> Config {
+        let directory = try createDirectory(for: url)
+        let descriptor = Darwin.open(directory.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard descriptor >= 0 else { throw RemoteError.configInvalid }
+        defer { close(descriptor) }
+
+        while Date() < deadline {
+            if flock(descriptor, LOCK_EX | LOCK_NB) == 0 {
+                var config = try load(from: url) ?? Config()
+                config.destinations[name] = destination
+                try config.save(to: url)
+                return config
+            }
+            guard errno == EWOULDBLOCK || errno == EINTR else { throw RemoteError.configInvalid }
+            Thread.sleep(forTimeInterval: min(0.05, max(0, deadline.timeIntervalSinceNow)))
+        }
+        throw RemoteError.timeout
+    }
+
+    /// Replaces the config atomically using a private temporary file in the same directory.
     public func save(to url: URL = fileURL) throws {
         try validate()
-        let directory = url.deletingLastPathComponent()
+        let directory = try Self.createDirectory(for: url)
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
             var path = Array(directory.appendingPathComponent(".slack-remote.XXXXXX").path.utf8CString)
             let descriptor = mkstemp(&path)
             guard descriptor >= 0 else { throw RemoteError.configInvalid }
@@ -69,9 +87,15 @@ public struct Config: Codable {
         }
     }
 
-    public mutating func saveAccount(_ account: Account) {
-        accounts.removeAll { $0.team == account.team }
-        accounts.append(account)
+    private static func createDirectory(for url: URL) throws -> URL {
+        let directory = url.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            return directory
+        } catch {
+            throw RemoteError.configInvalid
+        }
     }
 
     public func requireWriteAllowed(to destination: Destination) throws {
@@ -81,9 +105,7 @@ public struct Config: Codable {
     }
 
     private func validate() throws {
-        guard destinations.keys.allSatisfy(Self.isValidName),
-              Set(accounts.map(\.team)).count == accounts.count,
-              accounts.allSatisfy({ $0.selfDM == nil || $0.selfDM?.kind == .directMessage }) else {
+        guard destinations.keys.allSatisfy(Self.isValidName) else {
             throw RemoteError.configInvalid
         }
     }

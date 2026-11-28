@@ -34,9 +34,4 @@ struct MessageTextTests {
         let normalized = MessageText.normalize("e\u{0301}\r\nnext\r\n\r\n")
         #expect(Array(normalized.utf8) == Array("é\nnext\n".utf8))
     }
-
-    @Test func collapseIgnoresOnlyWhitespaceLayout() {
-        #expect(MessageText.collapse("hello\nthere\n") == MessageText.collapse("hello there"))
-        #expect(MessageText.collapse("hello\nthere\n") != MessageText.collapse("hello again"))
-    }
 }

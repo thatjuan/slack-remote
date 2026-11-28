@@ -11,9 +11,8 @@ public final class HelperServer: @unchecked Sendable {
     }
 
     private let listener: DispatchSourceRead
-    private let runnerURL: URL
     private let version: String
-    private let inProcess: (@Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32))?
+    private let inProcess: @Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32)
     private let peerRequirement: SecRequirement?
     private let lock = NSLock()
     private var last: LastCommand?
@@ -21,11 +20,9 @@ public final class HelperServer: @unchecked Sendable {
     public var lastCommand: LastCommand? { lock.withLock { last } }
 
     public init(socketURL: URL = HelperProtocol.socketURL,
-                runnerURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/slack-remote"),
                 version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-                inProcess: (@Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32))? = nil)
+                inProcess: @escaping @Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32))
         throws {
-        self.runnerURL = runnerURL
         self.version = version
         self.inProcess = inProcess
         peerRequirement = try Self.signingRequirement()
@@ -118,39 +115,29 @@ public final class HelperServer: @unchecked Sendable {
         }
         do {
             guard let (request, file) = try connection.receiveRequest() else { return }
-            let runner: HelperRunner
-            do {
-                defer { if let file { close(file) } }
-                guard request.protocolVersion == HelperProtocol.version, request.clientVersion == version else {
-                    try connection.send(.rejected("version_mismatch"))
-                    return
-                }
-                if request.arguments.first == "webkit-poc", let inProcess {
-                    let done = DispatchSemaphore(value: 0)
-                    let result = OSAllocatedUnfairLock(initialState: (stdout: Data(), stderr: Data(), status: Int32(1)))
-                    Task {
-                        let response = await inProcess(request)
-                        result.withLock { $0 = response }
-                        done.signal()
-                    }
-                    done.wait()
-                    let response = result.withLock { $0 }
-                    record(request, status: response.status)
-                    try connection.send(.stdout(response.stdout))
-                    try connection.send(.stderr(response.stderr))
-                    try connection.send(.exit(response.status))
-                    return
-                }
-                do {
-                    runner = try HelperRunner.spawn(at: runnerURL, request: request, file: file, version: version)
-                } catch {
-                    try connection.send(.rejected("spawn_failed"))
-                    return
-                }
+            if let file { close(file) }
+            guard request.protocolVersion == HelperProtocol.version, request.clientVersion == version else {
+                try connection.send(.rejected("version_mismatch"))
+                return
             }
-            let status = runner.stream(to: connection)
-            record(request, status: status)
-            try connection.send(.exit(status))
+            guard request.arguments.first == "webkit-poc" else {
+                try connection.send(.rejected("unsupported"))
+                return
+            }
+
+            let done = DispatchSemaphore(value: 0)
+            let result = OSAllocatedUnfairLock(initialState: (stdout: Data(), stderr: Data(), status: Int32(1)))
+            Task {
+                let response = await inProcess(request)
+                result.withLock { $0 = response }
+                done.signal()
+            }
+            done.wait()
+            let response = result.withLock { $0 }
+            record(request, status: response.status)
+            try connection.send(.stdout(response.stdout))
+            try connection.send(.stderr(response.stderr))
+            try connection.send(.exit(response.status))
         } catch {
             connection.disconnect()
         }

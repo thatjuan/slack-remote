@@ -1,31 +1,26 @@
 import Foundation
 
 public enum HelperProtocol {
-    public static let version = 1
-    public static var socketURL: URL { CommandLock.supportDirectory.appendingPathComponent("helper.sock") }
+    public static let version = 2
+    public static var socketURL: URL { SupportDirectory.url.appendingPathComponent("helper.sock") }
 
     public struct Request: Codable, Equatable, Sendable {
         public let protocolVersion: Int
         public let clientVersion: String
         public let arguments: [String]
-        public let workingDirectory: String
         public let passesFile: Bool
-        public let configPath: String?
 
         public init(protocolVersion: Int = HelperProtocol.version, clientVersion: String,
-                    arguments: [String], workingDirectory: String, passesFile: Bool, configPath: String? = nil) {
+                    arguments: [String], passesFile: Bool = false) {
             self.protocolVersion = protocolVersion
             self.clientVersion = clientVersion
             self.arguments = arguments
-            self.workingDirectory = workingDirectory
             self.passesFile = passesFile
-            self.configPath = configPath
         }
     }
 
     public enum Frame: Equatable {
         case request(Request)
-        case signal(Int32)
         case stdout(Data)
         case stderr(Data)
         case exit(Int32)
@@ -39,7 +34,8 @@ public enum HelperProtocol {
     }
 
     private enum Kind: UInt8 {
-        case request = 1, signal, stdout, stderr, exit, rejected
+        // Tag 2 was used to forward signals to the spawned CLI.
+        case request = 1, stdout = 3, stderr, exit, rejected
     }
 
     private static let maximumPayload = 64 * 1024 * 1024
@@ -53,8 +49,6 @@ public enum HelperProtocol {
             kind = .request
             // Request contains only JSON-encodable strings, integers and a boolean.
             payload = try! JSONEncoder().encode(request)
-        case .signal(let signal):
-            (kind, payload) = (.signal, encodeInteger(UInt32(bitPattern: signal)))
         case .stdout(let output):
             (kind, payload) = (.stdout, output)
         case .stderr(let output):
@@ -82,10 +76,9 @@ public enum HelperProtocol {
         switch kind {
         case .request:
             frame = .request(try JSONDecoder().decode(Request.self, from: payload))
-        case .signal, .exit:
+        case .exit:
             guard payload.count == 4 else { throw DecodeError.invalidPayload }
-            let number = Int32(bitPattern: decodeInteger(payload))
-            frame = kind == .signal ? .signal(number) : .exit(number)
+            frame = .exit(Int32(bitPattern: decodeInteger(payload)))
         case .stdout:
             frame = .stdout(payload)
         case .stderr:

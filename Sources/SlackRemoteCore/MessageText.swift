@@ -1,24 +1,9 @@
 import Foundation
 
+/// Validates and normalizes message text before sending it to Slack.
 public enum MessageText {
     public static func isEmojiName(_ name: String) -> Bool {
         name.wholeMatch(of: #/[a-z0-9_+'-]+/#) != nil
-    }
-
-    static func emojiName(from label: String?) -> String? {
-        guard let label, label.first == ":", label.last == ":", label.count > 2 else { return nil }
-        let name = String(label.dropFirst().dropLast())
-        return isEmojiName(name) ? name : nil
-    }
-
-    static func renderedEmojiName(_ node: any UINode) -> String? {
-        if Locators.emojiImage.matches(node) { return emojiName(from: node.string(.title)) }
-        guard Locators.emojiGroup.matches(node), node.children.count == 1,
-              let image = node.children.first, image.role == "AXImage",
-              let title = image.string(.title) else { return nil }
-        if let name = emojiName(from: title) { return name }
-        // Slack 4.53.292 exposes an image titled "<shortcode> emoji" inside the c-emoji group.
-        return title.wholeMatch(of: #/([a-z0-9_+'-]+) emoji/#).map { String($0.1) }
     }
 
     public static func validate(_ text: String, allowBroadcast: Bool, checkEmojiNames: Bool = true) throws {
@@ -52,9 +37,5 @@ public enum MessageText {
         var normalized = text.replacingOccurrences(of: "\r\n", with: "\n").precomposedStringWithCanonicalMapping
         if normalized.last == "\n" { normalized.removeLast() }
         return normalized
-    }
-
-    public static func collapse(_ text: String) -> String {
-        normalize(text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }

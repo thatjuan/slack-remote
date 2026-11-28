@@ -32,14 +32,10 @@ For `accessibility_not_trusted`, `error.details` always includes `settingsUrl`. 
 | Status | Error codes and conditions |
 | --- | --- |
 | 0 | Success, help or version |
-| 1 | `internal`, `ax_failure`, `not_implemented` |
-| 10 | `no_gui_session`, `screen_locked`, `accessibility_not_trusted`, `helper_version_mismatch` |
-| 11 | `slack_not_running`, `ambiguous_slack`, `slack_window_unavailable`, `slack_not_ready`, `tree_unavailable` |
-| 12 | `ui_drift`, `ambiguous_window`, `ui_blocked`, `overlay_left_open` |
-| 13 | `destination_mismatch`, `destination_unreachable`, `message_not_rendered`, `unsupported_destination` |
-| 14 | `slack_in_use`, `busy` |
+| 1 | `internal`, `not_implemented` |
+| 10 | `helper_version_mismatch` |
+| 13 | `destination_unreachable`, `unsupported_destination` |
 | 15 | `unsafe_text`, `draft_conflict`, `write_not_allowed`, `file_rejected` |
-| 16 | `write_failed`, `write_unverified` |
 | 17 | `send_unconfirmed`, `reaction_unconfirmed`, `upload_unconfirmed` |
 | 18 | `timeout` |
 | 19 | `partial_result` |
@@ -61,9 +57,7 @@ Message reads, directory lists and search return `complete`, `stopReason` and `p
 
 Run one command at a time. Concurrent callers share a lock, and a caller that exhausts its timeout waiting for it receives `busy`. Stop on `ui_drift`, which can occur after a Slack update. On `send_unconfirmed`, `upload_unconfirmed` or `reaction_unconfirmed`, read the conversation or thread before deciding whether to retry. Slack may already have applied the change.
 
-Set `SLACK_REMOTE_CONFIG` to use a private config file at a different path. The CLI requires the file to be owned by the current user and to exclude group and other permissions. It passes this setting to SlackRemote.app when forwarding a command, resolving relative paths from the CLI's working directory.
-
-Set `SLACK_REMOTE_NO_HELPER=1` to run a command directly in the CLI, using the Accessibility permission of the app that launched it.
+Set `SLACK_REMOTE_CONFIG` to use a private config file at a different path. The CLI requires the file to be owned by the current user and to exclude group and other permissions. Relative paths resolve from the CLI's working directory.
 
 ## Resolve a destination, read history and reply
 
