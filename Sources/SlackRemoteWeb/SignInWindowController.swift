@@ -35,6 +35,10 @@ public final class SignInWindowController: NSWindowController, NSWindowDelegate,
     private var polls: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     public var accountID: AccountID { id }
+    public var isAddingAccount: Bool {
+        if case .newAccount = purpose { return true }
+        return false
+    }
 
     public init?(purpose: SignInPurpose, pool: SessionPool, finished: @escaping () -> Void) {
         if let id = purpose.accountID, !pool.records.contains(where: { $0.id == id }) { return nil }

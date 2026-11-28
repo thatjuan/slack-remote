@@ -6,6 +6,10 @@ struct CommandOptions: ParsableArguments {
     @Option(help: "Time limit for the command in seconds.") var timeout: Double = 15
 
     func validate() throws {
+        try Self.validateTimeout(timeout)
+    }
+
+    static func validateTimeout(_ timeout: Double) throws {
         guard timeout.isFinite, timeout > 0 else {
             throw ValidationError("--timeout must be a finite number greater than zero.")
         }
@@ -60,52 +64,14 @@ struct DestinationOptions: ParsableArguments {
 }
 
 enum CommandSupport {
-    private struct Success<Output: Encodable>: Encodable {
-        var ok = true
-        let command: String
-        let slackVersion: String?
-        let warnings: [String]
-        let result: Output
-    }
-
-    private struct Failure<Output: Encodable>: Encodable {
-        struct ErrorBody: Encodable {
-            let code: String
-            let message: String
-            let details: [String: RemoteError.Detail]?
-        }
-
-        var ok = false
-        let command: String
-        let slackVersion: String?
-        let warnings: [String]?
-        let result: Output?
-        let error: ErrorBody
-    }
-
     /// Runs a local command and writes its JSON envelope to the appropriate stream.
     static func run<Output: Encodable>(_ command: String, work: () throws -> Output) throws {
         do {
-            let envelope = Success(command: command, slackVersion: nil, warnings: [], result: try work())
-            try write(envelope, to: .standardOutput)
+            try FileHandle.standardOutput.write(contentsOf: Envelope.success(command, result: try work()))
         } catch {
             let failure = error as? RemoteError ?? .internalError(operation: "run_command")
-            try writeFailure(command, error: failure, result: nil as Bool?)
+            try Envelope.writeFailure(command, error: failure)
             throw ExitCode(failure.exitStatus)
         }
-    }
-
-    static func writeFailure<Output: Encodable>(_ command: String, error: RemoteError, result: Output?) throws {
-        let envelope = Failure(command: command, slackVersion: nil, warnings: nil, result: result,
-                               error: .init(code: error.code, message: error.message, details: error.details))
-        try write(envelope, to: .standardError)
-    }
-
-    private static func write(_ value: some Encodable, to handle: FileHandle) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        var data = try encoder.encode(value)
-        data.append(0x0a)
-        try handle.write(contentsOf: data)
     }
 }

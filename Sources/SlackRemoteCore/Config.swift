@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-public struct Config: Codable {
+public struct Config: Codable, Sendable {
     public var destinations: [String: Destination] = [:]
     public var restrictWritesToDestinations = false
 

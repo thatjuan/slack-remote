@@ -17,13 +17,14 @@ struct HelperSocketTests {
         let source = try FileHandle(forReadingFrom: path)
         defer { try? source.close() }
         try FileManager.default.removeItem(at: path)
-        let request = HelperProtocol.Request(clientVersion: "test", arguments: [], passesFile: true)
-        try sender.send(.request(request), passing: source.fileDescriptor)
+        let call = HelperProtocol.Call(clientVersion: "test", command: "doctor", operation: .doctor(DoctorRequest()),
+                                       passesFile: true)
+        try sender.send(.call(call), passing: source.fileDescriptor)
 
-        let (received, descriptor) = try #require(try receiver.receiveRequest())
+        let (received, descriptor) = try #require(try receiver.receiveCall())
         let file = FileHandle(fileDescriptor: try #require(descriptor), closeOnDealloc: true)
         defer { try? file.close() }
-        #expect(received == request)
+        #expect(received == call)
         #expect(try file.readToEnd() == bytes)
         #expect(fcntl(file.fileDescriptor, F_GETFD) & FD_CLOEXEC == FD_CLOEXEC)
     }

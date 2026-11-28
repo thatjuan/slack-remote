@@ -1,5 +1,5 @@
 /// Why a paginated read ended.
-public enum StopReason: String, Encodable {
+public enum StopReason: String, Encodable, Sendable {
     case boundary
     case endOfList = "end_of_list"
     case limit

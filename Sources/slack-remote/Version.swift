@@ -1,3 +1,3 @@
 enum SlackRemoteVersion {
-    static let current = "1.2.0"
+    static let current = "2.0.0"
 }

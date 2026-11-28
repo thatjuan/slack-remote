@@ -3,7 +3,29 @@ import Foundation
 import os
 import Security
 
+/// Records the signal that interrupted a running helper call.
+public final class CancellationSignal: Sendable {
+    private let value = OSAllocatedUnfairLock<Int32?>(initialState: nil)
+    public var signal: Int32? { value.withLock { $0 } }
+
+    fileprivate func record(_ signal: Int32) { value.withLock { $0 = signal } }
+}
+
 public final class HelperServer: @unchecked Sendable {
+    public typealias CallHandler = @Sendable (HelperProtocol.Call, FileHandle?, CancellationSignal) async -> Reply
+
+    public struct Reply: Sendable {
+        public let stdout: Data
+        public let stderr: Data
+        public let status: Int32
+
+        public init(stdout: Data = Data(), stderr: Data = Data(), status: Int32) {
+            self.stdout = stdout
+            self.stderr = stderr
+            self.status = status
+        }
+    }
+
     public struct LastCommand {
         public let name: String
         public let status: Int32
@@ -12,7 +34,7 @@ public final class HelperServer: @unchecked Sendable {
 
     private let listener: DispatchSourceRead
     private let version: String
-    private let inProcess: @Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32)
+    private let callHandler: CallHandler
     private let peerRequirement: SecRequirement?
     private let lock = NSLock()
     private var last: LastCommand?
@@ -21,10 +43,10 @@ public final class HelperServer: @unchecked Sendable {
 
     public init(socketURL: URL = HelperProtocol.socketURL,
                 version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-                inProcess: @escaping @Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32))
+                callHandler: @escaping CallHandler)
         throws {
         self.version = version
-        self.inProcess = inProcess
+        self.callHandler = callHandler
         peerRequirement = try Self.signingRequirement()
 
         let directory = socketURL.deletingLastPathComponent()
@@ -109,44 +131,53 @@ public final class HelperServer: @unchecked Sendable {
     }
 
     private func serve(_ connection: HelperSocket) {
+        defer { connection.disconnect() }
         guard isAuthorized(connection.descriptor) else {
             try? connection.send(.rejected("unauthorized"))
             return
         }
         do {
-            guard let (request, file) = try connection.receiveRequest() else { return }
-            if let file { close(file) }
-            guard request.protocolVersion == HelperProtocol.version, request.clientVersion == version else {
+            guard let (call, descriptor) = try connection.receiveCall() else { return }
+            let file = descriptor.map { FileHandle(fileDescriptor: $0, closeOnDealloc: true) }
+            guard call.protocolVersion == HelperProtocol.version, call.clientVersion == version else {
                 try connection.send(.rejected("version_mismatch"))
-                return
-            }
-            guard request.arguments.first == "webkit-poc" else {
-                try connection.send(.rejected("unsupported"))
                 return
             }
 
             let done = DispatchSemaphore(value: 0)
-            let result = OSAllocatedUnfairLock(initialState: (stdout: Data(), stderr: Data(), status: Int32(1)))
-            Task {
-                let response = await inProcess(request)
-                result.withLock { $0 = response }
-                done.signal()
+            let result = OSAllocatedUnfairLock<Reply?>(initialState: nil)
+            let cancellation = CancellationSignal()
+            let complete: @Sendable (Reply) -> Void = { reply in
+                result.withLock { current in
+                    guard current == nil else { return }
+                    current = reply
+                    done.signal()
+                }
+            }
+            let task = Task {
+                complete(await callHandler(call, file, cancellation))
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                // This queue owns reads after the initial call. Disconnecting unblocks it.
+                defer { task.cancel() }
+                while let frame = try? connection.receive() {
+                    guard case .signal(let signal) = frame, [SIGINT, SIGTERM, SIGHUP].contains(signal) else { continue }
+                    cancellation.record(signal)
+                    let error = RemoteError.interrupted
+                    let bytes = try? Envelope.failure(call.command, error: error, result: nil as Bool?)
+                    complete(Reply(stderr: bytes ?? Data(), status: error.exitStatus))
+                    break
+                }
             }
             done.wait()
-            let response = result.withLock { $0 }
-            record(request, status: response.status)
+            guard let response = result.withLock({ $0 }) else { return }
+            lock.withLock {
+                last = LastCommand(name: call.command, status: response.status, time: Date())
+            }
             try connection.send(.stdout(response.stdout))
             try connection.send(.stderr(response.stderr))
             try connection.send(.exit(response.status))
-        } catch {
-            connection.disconnect()
-        }
-    }
-
-    private func record(_ request: HelperProtocol.Request, status: Int32) {
-        lock.withLock {
-            last = LastCommand(name: request.arguments.first ?? "", status: status, time: Date())
-        }
+        } catch {}
     }
 
     private static func signingRequirement() throws -> SecRequirement? {

@@ -6,16 +6,16 @@ import Testing
 struct HelperServerTests {
     private static let version = "test-version"
 
-    @Test func routesPoCCommandsInProcess() throws {
-        try withServer(inProcess: { request in
-            (Data(request.arguments.joined(separator: " ").utf8), Data("test stderr".utf8), 3)
+    @Test func routesTypedCalls() throws {
+        try withServer(callHandler: { call, _, _ in
+            .init(stdout: Data(call.command.utf8), stderr: Data("test stderr".utf8), status: 3)
         }) { server, socket in
-            try socket.send(.request(request(arguments: ["webkit-poc", "accounts"])))
+            try socket.send(.call(call()))
             let result = try readResult(socket)
-            #expect(result.stdout == Data("webkit-poc accounts".utf8))
+            #expect(result.stdout == Data("accounts list".utf8))
             #expect(result.stderr == Data("test stderr".utf8))
             #expect(result.status == 3)
-            #expect(server.lastCommand?.name == "webkit-poc")
+            #expect(server.lastCommand?.name == "accounts list")
             #expect(server.lastCommand?.status == 3)
         }
     }
@@ -25,32 +25,44 @@ struct HelperServerTests {
         try withServer { server, socket in
             let protocolVersion = HelperProtocol.version + (wrongProtocol ? 1 : 0)
             let clientVersion = wrongProtocol ? Self.version : "older-version"
-            let request = HelperProtocol.Request(protocolVersion: protocolVersion, clientVersion: clientVersion,
-                                                 arguments: ["webkit-poc", "accounts"])
-            try socket.send(.request(request))
+            let call = HelperProtocol.Call(protocolVersion: protocolVersion, clientVersion: clientVersion,
+                                           command: "accounts list", operation: .accountsList(AccountsListRequest()))
+            try socket.send(.call(call))
             #expect(try socket.receive() == .rejected("version_mismatch"))
             #expect(server.lastCommand == nil)
         }
     }
 
-    @Test(arguments: [[], ["dest", "list"]])
-    func rejectsUnsupportedArguments(_ arguments: [String]) throws {
-        try withServer { server, socket in
-            try socket.send(.request(request(arguments: arguments)))
-            #expect(try socket.receive() == .rejected("unsupported"))
-            #expect(server.lastCommand == nil)
+    @Test(arguments: [SIGINT, SIGTERM, SIGHUP])
+    func cancelsCallAndReturnsInterrupted(_ signal: Int32) throws {
+        let cancelled = DispatchSemaphore(value: 0)
+        try withServer(callHandler: { _, _, cancellation in
+            do { try await Task.sleep(for: .seconds(30)) }
+            catch {
+                #expect(cancellation.signal == signal)
+                cancelled.signal()
+            }
+            return .init(status: 1)
+        }) { server, socket in
+            try socket.send(.call(call()))
+            try socket.send(.signal(signal))
+            let result = try readResult(socket)
+            #expect(result.stdout.isEmpty)
+            #expect(String(decoding: result.stderr, as: UTF8.self).contains("\"interrupted\""))
+            #expect(result.status == 130)
+            #expect(server.lastCommand?.status == 130)
+            #expect(cancelled.wait(timeout: .now() + 1) == .success)
         }
     }
 
     private enum TestError: Error { case unexpectedFrame }
 
-    private func request(arguments: [String]) -> HelperProtocol.Request {
-        .init(clientVersion: Self.version, arguments: arguments)
+    private func call() -> HelperProtocol.Call {
+        .init(clientVersion: Self.version, command: "accounts list", operation: .accountsList(AccountsListRequest()))
     }
 
     private func withServer(
-        inProcess: @escaping @Sendable (HelperProtocol.Request) async -> (stdout: Data, stderr: Data, status: Int32)
-            = { _ in (Data(), Data(), 0) },
+        callHandler: @escaping HelperServer.CallHandler = { _, _, _ in .init(status: 0) },
         _ work: (HelperServer, HelperSocket) throws -> Void
     ) throws {
         let files = FileManager.default
@@ -62,7 +74,7 @@ struct HelperServerTests {
         let root = URL(fileURLWithPath: path, isDirectory: true)
         defer { try? files.removeItem(at: root) }
         let socketURL = root.appendingPathComponent("s")
-        let server = try HelperServer(socketURL: socketURL, version: Self.version, inProcess: inProcess)
+        let server = try HelperServer(socketURL: socketURL, version: Self.version, callHandler: callHandler)
         defer { server.stop() }
         let socket = try HelperSocket.connect(to: socketURL)
         defer { socket.disconnect() }

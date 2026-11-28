@@ -15,7 +15,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let login = SMAppService.mainApp
     private let menu = NSMenu()
 
-    init(server: HelperServer, pool: SessionPool?) {
+    init(server: HelperServer, pool: SessionPool?, engine: Engine) {
         self.server = server
         self.pool = pool
         super.init()
@@ -34,10 +34,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         pool?.onChange = { [weak self] in self?.rebuild() }
         Task { [weak self] in
             do {
-                try await pool?.start()
+                try await engine.waitUntilReady()
                 self?.isReady = true
                 self?.rebuild()
-                if firstLaunch, pool?.records.isEmpty == true { self?.openSignIn(.newAccount) }
+                if firstLaunch, pool?.records.isEmpty == true { _ = self?.openSignIn(.newAccount) }
             } catch {
                 self?.pool = nil
                 self?.rebuild()
@@ -102,18 +102,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func chooseSignIn(_ sender: NSMenuItem) {
-        if let purpose = sender.representedObject as? SignInPurpose { openSignIn(purpose) }
+        if let purpose = sender.representedObject as? SignInPurpose { _ = openSignIn(purpose) }
     }
 
-    private func openSignIn(_ purpose: SignInPurpose) {
-        guard isReady, let pool else { return }
+    private func openSignIn(_ purpose: SignInPurpose) -> SignInWindowController? {
+        guard let pool else { return nil }
         if signIn == nil {
             signIn = SignInWindowController(purpose: purpose, pool: pool) { [weak self] in
                 self?.signIn = nil
                 NSApp.setActivationPolicy(.accessory)
             }
         }
-        guard signIn != nil else { return }
+        guard let signIn else { return nil }
         NSApp.setActivationPolicy(.regular)
         // Wait for the status menu to finish closing before requesting activation.
         DispatchQueue.main.async { [weak self] in
@@ -123,6 +123,26 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 // Reopening the running app lets Launch Services activate its key window.
                 NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: .init())
             }
+        }
+        return signIn
+    }
+
+    /// Open the account sign-in window and optionally wait for its account record.
+    func addAccount(wait: Bool, deadline: Date) async throws -> [TeamID]? {
+        guard Date() < deadline else { throw RemoteError.timeout }
+        guard let pool, signIn?.isAddingAccount != false, let window = openSignIn(.newAccount) else {
+            throw RemoteError.sessionUnavailable
+        }
+        guard wait else { return nil }
+        while true {
+            try Task.checkCancellation()
+            if let account = pool.records.first(where: { $0.id == window.accountID }) {
+                return account.teams.map(\.id)
+            }
+            guard signIn === window else { throw RemoteError.signInCancelled }
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { throw RemoteError.timeout }
+            try await Task.sleep(for: .seconds(min(remaining, 0.15)))
         }
     }
 
@@ -137,15 +157,23 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         alert.addButton(withTitle: "Cancel").keyEquivalent = "\u{1b}"
         NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        if signIn?.accountID == id { signIn?.close() }
         Task {
-            do { try await pool.remove(id) }
+            do { try await removeAccount(id) }
             catch {
                 let feedback = NSAlert()
                 feedback.messageText = "SlackRemote could not finish removing this account."
                 feedback.runModal()
             }
         }
+    }
+
+    /// Remove an account through the same profile cleanup used by the menu.
+    func removeAccount(_ id: AccountID) async throws {
+        guard let pool, pool.records.contains(where: { $0.id == id }) else {
+            throw RemoteError.noAccount(team: nil)
+        }
+        if signIn?.accountID == id { signIn?.close() }
+        try await pool.remove(id)
     }
 
     private func addStatus(_ title: String, to menu: NSMenu) {
