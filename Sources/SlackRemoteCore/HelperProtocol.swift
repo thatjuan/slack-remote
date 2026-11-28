@@ -4,7 +4,7 @@ public enum HelperProtocol {
     public static let version = 1
     public static var socketURL: URL { CommandLock.supportDirectory.appendingPathComponent("helper.sock") }
 
-    public struct Request: Codable, Equatable {
+    public struct Request: Codable, Equatable, Sendable {
         public let protocolVersion: Int
         public let clientVersion: String
         public let arguments: [String]

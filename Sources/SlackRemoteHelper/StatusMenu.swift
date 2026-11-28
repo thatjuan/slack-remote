@@ -1,17 +1,21 @@
 import AppKit
 import ServiceManagement
 import SlackRemoteCore
+import SlackRemoteWeb
 
+@MainActor
 final class StatusMenu: NSObject, NSMenuDelegate {
     static let hasLaunchedKey = "hasLaunched"
 
     private let server: HelperServer
+    private let webKit: WebKitPoC
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let login = SMAppService.mainApp
     private let menu = NSMenu()
 
-    init(server: HelperServer) {
+    init(server: HelperServer, webKit: WebKitPoC) {
         self.server = server
+        self.webKit = webKit
         super.init()
         statusItem.button?.image = NSImage(systemSymbolName: "bubble.left.and.text.bubble.right",
                                             accessibilityDescription: "SlackRemote")
@@ -38,6 +42,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             addStatus("Last command: none")
         }
         menu.addItem(.separator())
+        addAction("Add Slack Account (PoC)…", action: #selector(addAccount))
+        for title in webKit.teamTitles { addStatus(title) }
+        menu.addItem(.separator())
         if !trusted {
             addAction("Grant Access…", action: #selector(grantAccess))
         }
@@ -46,6 +53,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let quit = menu.addItem(withTitle: "Quit SlackRemote", action: #selector(NSApplication.terminate(_:)),
                                 keyEquivalent: "q")
         quit.target = NSApp
+    }
+
+    @objc private func addAccount() {
+        webKit.addAccount()
     }
 
     private func addStatus(_ title: String) {
