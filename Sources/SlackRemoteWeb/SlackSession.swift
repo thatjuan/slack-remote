@@ -36,7 +36,7 @@ final class SlackSession: NSObject, WKNavigationDelegate {
 
     private var pending: (navigation: WKNavigation, completion: CheckedContinuation<Void, Error>)?
     private var loading: Task<Void, Error>?
-    private var refreshing: (team: TeamID, task: Task<Bool, Never>)?
+    private var refreshing: (team: TeamID, task: Task<LocalConfig.Team?, Never>)?
     private var ready = false
 
     convenience init(storeID: UUID) {
@@ -71,6 +71,19 @@ final class SlackSession: NSObject, WKNavigationDelegate {
         return try await LocalConfig.read(from: webView)
     }
 
+    /// Prefer the idle document. A full client load can populate missing local storage.
+    func credentials(for team: TeamID) async throws -> LocalConfig.Team {
+        if (try? await prepare()) != nil,
+           let config = try? await localConfig().teams[team.rawValue], let token = config.token, !token.isEmpty {
+            return config
+        }
+        try Task.checkCancellation()
+        guard let config = await refresh(for: team) else {
+            throw SlackSessionError.missingConfig
+        }
+        return config
+    }
+
     /// Share the initial navigation among concurrent commands for this profile.
     func prepare() async throws {
         while let refreshing { _ = await refreshing.task.value }
@@ -86,24 +99,25 @@ final class SlackSession: NSObject, WKNavigationDelegate {
     }
 
     /// Give Slack's full client up to twenty seconds to recover the team's token.
-    func refresh(for team: TeamID) async -> Bool {
+    func refresh(for team: TeamID) async -> LocalConfig.Team? {
         while let refreshing {
             let recovered = await refreshing.task.value
             if refreshing.team == team { return recovered }
         }
-        guard webView != nil else { return false }
-        let task = Task {
+        guard webView != nil else { return nil }
+        let task = Task<LocalConfig.Team?, Never> {
             defer { refreshing = nil }
             if let loading { _ = try? await loading.value }
             ready = false
             let clock = ContinuousClock()
             let deadline = clock.now + .seconds(20)
-            var recovered = false
+            var recovered: LocalConfig.Team?
             do {
                 try await loadClient(for: team, deadline: deadline)
                 while !Task.isCancelled, clock.now < deadline {
-                    if let token = try? await localConfig().teams[team.rawValue]?.token, !token.isEmpty {
-                        recovered = true
+                    if let config = try? await localConfig().teams[team.rawValue],
+                       let token = config.token, !token.isEmpty {
+                        recovered = config
                         break
                     }
                     try await Task.sleep(until: min(deadline, clock.now + .milliseconds(500)), clock: clock)
@@ -112,10 +126,8 @@ final class SlackSession: NSObject, WKNavigationDelegate {
             do {
                 try await loadIdle()
                 ready = true
-                return recovered
-            } catch {
-                return false
-            }
+            } catch {}
+            return recovered
         }
         refreshing = (team, task)
         return await task.value

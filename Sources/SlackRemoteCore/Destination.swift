@@ -11,7 +11,7 @@ public struct TeamID: Hashable, RawRepresentable, Codable, Sendable {
     public init?(rawValue: String) { self.init(rawValue) }
 }
 
-public struct ConversationID: Hashable, RawRepresentable, Codable {
+public struct ConversationID: Hashable, RawRepresentable, Codable, Sendable {
     public enum Kind: String, Encodable { case channel, directMessage, group }
 
     public let rawValue: String
@@ -43,7 +43,7 @@ public struct UserID: Hashable, RawRepresentable, Codable, Sendable {
     public init?(rawValue: String) { self.init(rawValue) }
 }
 
-public struct Destination: Hashable, Codable {
+public struct Destination: Hashable, Codable, Sendable {
     public let team: TeamID
     public let conversation: ConversationID
 

@@ -1,23 +1,39 @@
 import AppKit
+import Darwin
 import Foundation
 import SlackRemoteCore
 
-/// Sends the WebKit PoC command to the running helper.
+/// Sends a parsed command to SlackRemote.app and streams its reply.
 enum HelperClient {
-    static func forward(arguments: [String]) -> Int32 {
-        let command = "webkit-poc"
+    static func call(command: String, operation: SlackRemoteCore.Operation, timeout: Double, file: Int32? = nil) -> Int32 {
         guard let connection = connectOrLaunch() else {
-            return fail(command, error: .internalError(operation: "helper_unavailable"))
+            return fail(command, error: .helperUnavailable)
         }
         defer { connection.disconnect() }
 
-        let request = HelperProtocol.Request(clientVersion: SlackRemoteVersion.current, arguments: arguments)
-        do {
-            try connection.send(.request(request))
-            return try receiveResult(from: connection, command: command)
-        } catch {
-            return fail(command, error: .internalError(operation: "helper_disconnected"))
+        let call = HelperProtocol.Call(clientVersion: SlackRemoteVersion.current, command: command,
+                                       operation: operation, timeout: timeout, configPath: Config.fileURL.path,
+                                       passesFile: file != nil)
+        let queue = DispatchQueue(label: "slack-remote.client.signals")
+        // Defer forwarding until the initial call has been written to the socket.
+        queue.suspend()
+        let signals = [SIGINT, SIGTERM, SIGHUP].map { number in
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
+            source.setEventHandler { try? connection.send(.signal(number)) }
+            source.activate()
+            return source
         }
+        defer { signals.forEach { $0.cancel() } }
+        do {
+            try connection.send(.call(call), passing: file)
+        } catch {
+            queue.resume()
+            return fail(command, error: .helperUnavailable)
+        }
+        queue.resume()
+        do { return try receiveResult(from: connection, command: command) }
+        catch { return fail(command, error: .helperUnavailable) }
     }
 
     private static func connectOrLaunch() -> HelperSocket? {
@@ -55,15 +71,15 @@ enum HelperClient {
                 return fail(command, error: .helperVersionMismatch)
             case .rejected(let reason):
                 return fail(command, error: .internalError(operation: "helper_\(reason)"))
-            case .request:
+            case .call, .signal:
                 return fail(command, error: .internalError(operation: "helper_invalid_response"))
             }
         }
-        return fail(command, error: .internalError(operation: "helper_disconnected"))
+        return fail(command, error: .helperUnavailable)
     }
 
     private static func fail(_ command: String, error: RemoteError) -> Int32 {
-        try? CommandSupport.writeFailure(command, error: error, result: nil as Bool?)
+        try? Envelope.writeFailure(command, error: error)
         return error.exitStatus
     }
 }

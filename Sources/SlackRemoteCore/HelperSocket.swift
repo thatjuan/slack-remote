@@ -66,7 +66,7 @@ public final class HelperSocket: @unchecked Sendable {
     }
 
     public func send(_ frame: HelperProtocol.Frame, passing file: Int32? = nil) throws {
-        let data = HelperProtocol.encode(frame)
+        let data = try HelperProtocol.encode(frame)
         try writeLock.withLock {
             try data.withUnsafeBytes { bytes in
                 // The control message is sent once. A short write leaves ordinary frame bytes.
@@ -102,7 +102,7 @@ public final class HelperSocket: @unchecked Sendable {
         return count
     }
 
-    func receiveRequest() throws -> (HelperProtocol.Request, Int32?)? {
+    func receiveCall() throws -> (HelperProtocol.Call, Int32?)? {
         var firstByte: UInt8 = 0
         var rights = RightsMessage()
         var message = msghdr()
@@ -131,10 +131,10 @@ public final class HelperSocket: @unchecked Sendable {
             else { throw HelperProtocol.DecodeError.invalidPayload }
             if let file, fcntl(file, F_SETFD, FD_CLOEXEC) == -1 { throw Self.systemError() }
             input.append(firstByte)
-            guard case .request(let request) = try receive(), request.passesFile == (file != nil) else {
+            guard case .call(let call) = try receive(), call.passesFile == (file != nil) else {
                 throw HelperProtocol.DecodeError.invalidPayload
             }
-            return (request, file)
+            return (call, file)
         } catch {
             if let file { close(file) }
             throw error

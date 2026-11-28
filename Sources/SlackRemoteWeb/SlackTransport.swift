@@ -1,27 +1,22 @@
 import Foundation
+import SlackRemoteCore
 import WebKit
 
 enum SlackSessionError: Error {
     case missingConfig
     case navigationFailed
-    case invalidWorkspaceURL
     case invalidResponse
-}
-
-struct TransportResponse: Sendable {
-    let status: Int
-    let retryAfter: Double?
-    let body: Data
 }
 
 /// Send a Slack API request using the token currently loaded in this WebKit profile.
 @MainActor
 func nativePost(_ team: LocalConfig.Team, in store: WKWebsiteDataStore, method: String, params: [String: String])
     async throws -> TransportResponse {
-    guard let token = team.token, !token.isEmpty else { throw SlackSessionError.missingConfig }
-    guard let base = slackHTTPSURL(team.url), let host = base.host?.lowercased(),
-          let url = URL(string: "api/" + method, relativeTo: base)?.absoluteURL else {
-        throw SlackSessionError.invalidWorkspaceURL
+    guard let token = team.token, !token.isEmpty,
+          method.wholeMatch(of: #/[a-zA-Z0-9._]+/#) != nil,
+          let base = slackHTTPSURL(team.url), let host = base.host?.lowercased(),
+          let url = URL(string: "/api/" + method, relativeTo: base)?.absoluteURL else {
+        throw TransportFailure.notSent
     }
 
     let cookies = await store.httpCookieStore.allCookies().filter { cookie in
@@ -35,6 +30,7 @@ func nativePost(_ team: LocalConfig.Team, in store: WKWebsiteDataStore, method: 
     var form = params
     form["token"] = token
     let request = makeNativePostRequest(url: url, form: form, cookies: cookies)
+    try Task.checkCancellation()
 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpCookieStorage = nil
@@ -43,8 +39,13 @@ func nativePost(_ team: LocalConfig.Team, in store: WKWebsiteDataStore, method: 
     configuration.timeoutIntervalForResource = 30
     let network = URLSession(configuration: configuration, delegate: RejectRedirects(), delegateQueue: nil)
     defer { network.finishTasksAndInvalidate() }
-    let (data, response) = try await network.data(for: request)
-    guard let http = response as? HTTPURLResponse else { throw SlackSessionError.invalidResponse }
+    let (data, response): (Data, URLResponse)
+    do { (data, response) = try await network.data(for: request) }
+    catch {
+        try Task.checkCancellation()
+        throw TransportFailure.noResponse
+    }
+    guard let http = response as? HTTPURLResponse else { throw TransportFailure.noResponse }
     return TransportResponse(status: http.statusCode,
                              retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init), body: data)
 }

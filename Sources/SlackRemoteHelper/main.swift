@@ -20,9 +20,10 @@ MainActor.assumeIsolated {
         app.setActivationPolicy(.accessory)
         installMainMenu()
         let pool = (try? AccountStore.load()).map { SessionPool(file: $0) }
-        let webKit = WebKitPoC(pool: pool)
-        if let server = try? HelperServer(inProcess: { await webKit.handle($0) }) {
-            let statusMenu = StatusMenu(server: server, pool: pool)
+        let engine = Engine(pool: pool)
+        if let server = try? HelperServer(callHandler: { call, file, _ in await engine.perform(call, file: file) }) {
+            let statusMenu = StatusMenu(server: server, pool: pool, engine: engine)
+            engine.useMenu(statusMenu)
             withExtendedLifetime(statusMenu) { app.run() }
         }
     }
