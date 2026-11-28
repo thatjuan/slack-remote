@@ -1,35 +1,36 @@
-# slack-remote search
+# search
 
 ```sh
-slack-remote search --query TEXT
-    [--type TYPE] [--in NAME | --in-team TEAM --in-channel CHANNEL]
-    [--from-me] [--has-link] [--threads-only] [--team TEAM]
-    [--max-results N] [--max-pages P] [--allow-partial] [--open INDEX]
+slack-remote search --query TEXT [--type messages|files] [--team T]
+                    [--in NAME | --in-channel C] [--from-me] [--has-link] [--threads-only]
+                    [--sort score|timestamp] [--limit N] [--allow-partial] [--timeout S]
 ```
 
-Search runs in the signed-in Slack client. Slack interprets any search modifiers in `TEXT`. The command checks the query field before submitting and verifies the conversation filter by ID. `--in` uses a configured destination name. Filtering a DM currently requires the configured account's self-DM.
+Search messages or files with Slack's Web API. Messages and score order are the defaults. Use `--sort timestamp` for newest first. `--limit` defaults to 50 and accepts 1–1,000.
 
-Without a conversation filter, `--team` uses the current conversation in that workspace or the account's configured self-DM to switch workspaces. Use `--interrupt` to allow search while Slack has recent user input.
+`--in NAME` selects a configured destination and its workspace. `--in-channel C` selects a conversation ID in the selected workspace. Without a destination supplying the team, pass `--team` when multiple workspaces are signed in.
 
-The default type is `messages`. Use `--in NAME` or `--in-team TEAM --in-channel CHANNEL` to search a specific channel or self-DM. Slack can provide additional types through its Sources menu. Look in `availableTypes` for the current choices. An empty channel search may expose only messages.
+The command appends filters to the query in this order.
 
-Scoped Files uses Slack’s **View in Search** control when search opens in a conversation pane. If Slack exposes only the scoped empty pane or the full Files view loses the verified In filter, the command returns `unsupported_destination`.
+| Flag | Modifier |
+| --- | --- |
+| `--in`, `--in-channel` | `in:#channel-name` for a channel or `in:@username` for a DM. Group DMs return `unsupported_destination`. |
+| `--from-me` | `from:<@USER_ID>` for the signed-in user |
+| `--has-link` | `has:link` |
+| `--threads-only` | `is:thread` |
 
-People and Channels are workspace-scoped sources. Run them without `--in`, the explicit conversation flags, or a Slack `in:` modifier. Add `--team TEAM` if you need to switch workspaces.
+GIF Monger live checks confirmed all four modifiers, including `in:@username` for the self-DM. See [read validation](../validation/v2-read.md#search-modifiers).
 
-```sh
-slack-remote search --type people --query "Ada"
-slack-remote search --type channels --query "planning"
-```
+Search checks each match against the requested conversation and author. When it drops matches, the envelope includes a `filtered_<n>` warning with the number dropped. For files the conversation check uses Slack's share metadata.
 
-Slack discards the conversation filter for these sources. A conversation flag returns `unsupported_destination` before the CLI opens search.
+| Result field | Meaning |
+| --- | --- |
+| `team`, `type` | Workspace ID and `messages` or `files` |
+| `query` | Search text sent to Slack, including modifiers |
+| `total` | Match count reported by Slack before local filtering |
+| `complete`, `stopReason`, `pages` | [List results](../scripting.md#list-results). Search uses numbered pages with a fixed page size to preserve page offsets. |
+| `results` | Matches in Slack's order |
 
-Results follow Slack's order at the time of the search. Slack chooses the ranking and may truncate the rendered message excerpts. The CLI keeps result types separate. `complete: true` means the CLI reached the end of the results Slack listed for the selected type. The workspace may hold other matches.
+A message match contains `ts`, `conversation` (ID), `conversationName`, `user` (author ID), `userName`, `text` (Slack mrkdwn), and `permalink`.
 
-People search can return a display label with `user: null` and `idSource: "none"` when Slack exposes no identifier for that card. Treat the label as display text. The [people directory](people.md) can return user IDs when its cards expose them.
-
-The defaults are 50 results and 20 pages. `--max-results` accepts 1–1,000. Each result set reports `complete`, `stopReason`, and `pages`. An explicit bound reports `limit`. A stall or deadline returns `partial_result` (19), or the available results if you pass `--allow-partial`.
-
-Search returns to the starting conversation after reading the results. `--open INDEX` selects a zero-based message result and leaves Slack on the verified message destination. The result includes `opened.inThread` when the message appears in the thread pane. Results with `idSource: "none"` have null identifiers and cannot be opened. The `sort` field is null when Slack exposes no selected sort.
-
-Ctrl-C exits with status 130 after one bounded cleanup attempt. If the command cannot close its popup or restore the starting conversation, it reports the cleanup error on stderr.
+A file match contains `id`, `name`, `title`, `mimetype`, `size` in bytes, `user` (owner ID), `userName`, `created` in Unix seconds, and `permalink`. Optional fields are omitted when Slack supplies no value or a name has yet to be resolved.

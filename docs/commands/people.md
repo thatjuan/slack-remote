@@ -1,13 +1,19 @@
 # people
 
-`slack-remote people [--team TEAM_ID]`
+```sh
+slack-remote people [--team T] [--include-bots] [--include-deleted]
+                    [--limit N] [--allow-partial] [--timeout S]
+```
 
-Lists users from the People tab of Slack’s directory and returns to the starting conversation. Each row includes a Slack user ID and the card’s display label. With no `--team`, the command uses the workspace Slack is showing. With `--team`, it opens that workspace using a Slack link and checks the workspace ID.
+List a Slack workspace's users. Include bots and Slackbot with `--include-bots` and deleted users with `--include-deleted`. A deleted bot requires both flags. Pass `--team` when multiple workspaces are signed in.
 
-If **Go › People & User Groups** leaves the view unchanged, the command opens the directory through **Add channels › Browse channels** in an English Slack client and selects the People tab.
+`--limit` defaults to 500 and accepts 1–5,000. The limit counts users who pass the filters. The result has the workspace ID `team`, a `people` array, and the [list fields](../scripting.md#list-results) `complete`, `stopReason`, and `pages`.
 
-Slack can reopen a scoped search pane during the return to the starting conversation. The command closes it when the window, conversation and account checks identify it as reopened by that return. Panes already open when the directory command starts stay open. If clean return cannot be verified, the command can report `overlay_left_open`.
-
-`--max-items` defaults to 500 and accepts up to 5,000. `--max-pages` defaults to 100. The result includes `complete`, `stopReason`, `pages`, and `expectedCount`. The observed grid has no reliable count or end marker, so `expectedCount` is `null` and a full traversal can finish with a partial result.
-
-A caller limit returns `limit` with exit status 0. When paging stalls or runs out of time, the command returns the items collected and exits with status 19. Use `--allow-partial` to return the same partial result as a success.
+| Person field | Meaning |
+| --- | --- |
+| `user` | Slack user ID |
+| `name` | Slack username or handle, when available |
+| `realName` | Real name from the Slack user record, when available |
+| `displayName` | Profile display name, when available |
+| `isBot` | Whether the account is a bot, app user or Slackbot |
+| `deleted` | Whether Slack reports the user as deleted |

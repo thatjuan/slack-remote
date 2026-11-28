@@ -1,25 +1,32 @@
 # read
 
 ```sh
-slack-remote read [--dest NAME | --team TEAM --channel ID] [--limit N]
-slack-remote read (--dest NAME | --team TEAM --channel ID) --history
-                  [--since TS] [--max-messages N] [--max-pages N] [--allow-partial]
-slack-remote read (--dest NAME | --team TEAM --channel ID) --thread TS
-                  [--limit N | --history] [--close-thread] [--dry-run]
+slack-remote read (--dest NAME | --team T --channel C) [--thread TS]
+                  [--since TS] [--until TS] [--limit N] [--allow-partial] [--timeout S]
 ```
 
-With a destination, `read` accepts the same `--user`, `--route`, and `--interrupt` options as [`open`](open.md).
+Read conversation history or a thread through Slack's Web API. Reading preserves the conversation's unread state.
 
-Rendered reads return the message list Slack has drawn, in order from oldest to newest. Without a destination the command reads the current view in place. By default it returns every rendered message. `--limit N` keeps the newest N, including an empty array for zero.
+Conversation history returns up to the newest `N` messages, oldest first. A thread returns up to the earliest `N` messages, parent first. Give `--thread` the parent's timestamp. A reply timestamp returns `message_not_found`. Use Slack timestamps such as `1700000000.000100`. The `--since` and `--until` bounds are exclusive.
 
-`--history` scrolls toward older messages and reserves time to return to the last message in Slack’s initial rendered list. It defaults to 200 messages and 50 pages, with an upper limit of 2,000 messages. `--since` accepts a Slack timestamp such as `1700000000.000100` and keeps messages strictly newer than it. Messages that arrive during paging can appear in the snapshot.
+`--limit` defaults to 50 and accepts 1–2,000. See [List results](../scripting.md#list-results) for deadlines and partial output.
 
-Both results contain `team`, `conversation`, `route`, `scope`, `complete`, `stopReason`, `pages`, `readAt`, `skippedItems`, and `messages`. History adds `scrollRestored` and, when messages are returned, `oldestTs` and `newestTs`. `scrollRestored: true` confirms the starting message is rendered again in the same conversation or thread. It makes no claim about the exact viewport position. Rendered conversation reads report `complete: false`, `stopReason: "limit"`, and `pages: 0`.
+| Result field | Meaning |
+| --- | --- |
+| `team`, `conversation` | Slack workspace and conversation IDs |
+| `thread` | Requested parent timestamp or `null` |
+| `complete`, `stopReason`, `pages` | Paging outcome. `boundary` means Slack exhausted the range supplied with `--since`. |
+| `oldestTs`, `newestTs` | First and last returned timestamps, or `null` for an empty list |
+| `readAt` | Time of the read in ISO 8601 UTC |
+| `messages` | Messages in chronological order |
 
-`--thread TS` uses the parent message's timestamp. The result adds `thread` and uses `scope: "rendered-thread"`. A rendered thread read reports one snapshot in `pages`. Combine it with `--history` to page the thread and use the history options above. The pane stays open unless you pass `--close-thread`. `--dry-run` reports the plan without opening a pane.
-
-In message text, an emoji with a Slack shortcode appears as `:short_name:`. A message includes `emojiOmitted: true` if Slack exposes an emoji image without a shortcode.
-
-History exits successfully at the requested boundary or limit. A stall or deadline returns `partial_result` (19). Pass `--allow-partial` to return the available messages with `complete: false` and the corresponding stop reason. A rendered account mismatch returns `account_mismatch`.
-
-Primary reads and history can run under the recognized attachment preview in a verified self-DM. The preview stays open. Other blocking overlays return `ui_blocked`.
+| Message field | Meaning |
+| --- | --- |
+| `ts` | Slack message timestamp, preserved as a string |
+| `user`, `userName` | Author's ID and resolved name. Either may be `null`. Bot posts can supply their own name. |
+| `botId`, `subtype` | Slack bot ID and subtype, or `null` |
+| `text` | Stored Slack mrkdwn, including shortcode emoji and markup for links and mentions |
+| `threadTs`, `replyCount` | Parent timestamp for thread messages and reply count for parents. Otherwise the fields are `null`. |
+| `edited` | Whether Slack returned edit metadata |
+| `files` | Attachments with `id`, `name`, `title`, `mimetype`, `size` in bytes, and `permalink`. Slack may omit metadata other than the ID. |
+| `reactions` | Each has a Slack shortcode `name`, a total `count`, and `reacted`, which indicates whether Slack included the signed-in user among its reactors. |

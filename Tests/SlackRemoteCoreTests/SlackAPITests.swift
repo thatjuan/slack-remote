@@ -17,7 +17,7 @@ struct SlackAPITests {
         var nextCursor: String? { responseMetadata?.nextCursor }
     }
 
-    private actor StubTransport: SlackTransport {
+    actor StubTransport: SlackTransport {
         struct Request: Equatable {
             let team: TeamID
             let method: String

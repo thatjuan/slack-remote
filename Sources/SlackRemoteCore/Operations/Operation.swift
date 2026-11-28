@@ -12,6 +12,11 @@ public enum Operation: Codable, Equatable, Sendable {
     case accountsList(AccountsListRequest)
     case accountsAdd(AccountsAddRequest)
     case accountsRemove(AccountsRemoveRequest)
+    case read(ReadRequest)
+    case search(SearchRequest)
+    case channels(ChannelsRequest)
+    case members(MembersRequest)
+    case people(PeopleRequest)
 
     public var body: any RemoteOperation {
         switch self {
@@ -20,6 +25,11 @@ public enum Operation: Codable, Equatable, Sendable {
         case .accountsList(let request): return request
         case .accountsAdd(let request): return request
         case .accountsRemove(let request): return request
+        case .read(let request): return request
+        case .search(let request): return request
+        case .channels(let request): return request
+        case .members(let request): return request
+        case .people(let request): return request
         }
     }
 }
@@ -55,12 +65,15 @@ public struct OperationContext: Sendable {
     public let helperVersion: String
     public let accounts: @Sendable () async -> [AccountRecord]
     public let api: @Sendable (TeamID?) async throws -> SlackAPI
+    private let userDirectory: @Sendable (TeamID) async -> UserDirectory
     public let ui: AccountUI
     public let warn: @Sendable (String) -> Void
 
     public init(deadline: Date, config: Config?, file: FileHandle? = nil, helperVersion: String,
                 accounts: @escaping @Sendable () async -> [AccountRecord],
-                api: @escaping @Sendable (TeamID?) async throws -> SlackAPI, ui: AccountUI,
+                api: @escaping @Sendable (TeamID?) async throws -> SlackAPI,
+                users: @escaping @Sendable (TeamID) async -> UserDirectory = { _ in UserDirectory() },
+                ui: AccountUI,
                 warn: @escaping @Sendable (String) -> Void) {
         self.deadline = deadline
         self.config = config
@@ -68,7 +81,13 @@ public struct OperationContext: Sendable {
         self.helperVersion = helperVersion
         self.accounts = accounts
         self.api = api
+        self.userDirectory = users
         self.ui = ui
         self.warn = warn
+    }
+
+    /// The helper's shared name cache for this workspace.
+    public func users(_ team: TeamID) async -> UserDirectory {
+        await userDirectory(team)
     }
 }

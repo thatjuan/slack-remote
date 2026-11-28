@@ -50,11 +50,15 @@ struct DestinationOptions: ParsableArguments {
 
     func resolve(using config: Config?) throws -> Destination? {
         if let dest {
-            guard let destination = config?.destinations[dest] else { throw RemoteError.unsupportedDestination }
-            return destination
+            return try Self.resolveNamed(dest, using: config)
         }
         if let team, let channel { return Destination(team: team, conversation: channel) }
         return nil
+    }
+
+    static func resolveNamed(_ name: String, using config: Config?) throws -> Destination {
+        guard let destination = config?.destinations[name] else { throw RemoteError.unsupportedDestination }
+        return destination
     }
 
     func requireDestination(using config: Config?) throws -> Destination {
@@ -63,7 +67,41 @@ struct DestinationOptions: ParsableArguments {
     }
 }
 
+struct ListingOptions: ParsableArguments {
+    @Option(help: "Maximum rows to return, from 1 to 5,000.") var limit = 500
+    @Flag(help: "Return the rows collected before the deadline.") var allowPartial = false
+
+    func validate() throws {
+        try CommandSupport.validateLimit(limit, maximum: 5000)
+    }
+}
+
+struct WorkspaceOptions: ParsableArguments {
+    @Option(help: "Slack workspace ID.", transform: { raw in
+        guard let team = TeamID(raw) else { throw ValidationError("Expected a Slack team ID.") }
+        return team
+    }) var team: TeamID?
+}
+
 enum CommandSupport {
+    static func validateLimit(_ limit: Int, maximum: Int) throws {
+        guard (1...maximum).contains(limit) else {
+            throw ValidationError("--limit must be between 1 and \(maximum).")
+        }
+    }
+
+    /// Resolves config-backed options before sending the typed operation to the helper.
+    static func call(_ command: String, timeout: Double, operation: () throws -> SlackRemoteCore.Operation) throws {
+        let request: SlackRemoteCore.Operation
+        do {
+            request = try operation()
+        } catch let error as RemoteError {
+            try Envelope.writeFailure(command, error: error)
+            throw ExitCode(error.exitStatus)
+        }
+        throw ExitCode(HelperClient.call(command: command, operation: request, timeout: timeout))
+    }
+
     /// Runs a local command and writes its JSON envelope to the appropriate stream.
     static func run<Output: Encodable>(_ command: String, work: () throws -> Output) throws {
         do {
