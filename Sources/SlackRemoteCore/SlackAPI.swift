@@ -140,7 +140,9 @@ public struct SlackAPI: Sendable {
 
     /// Fetch only the pages needed to fill the requested limit.
     public func paginate<Page: CursorPage>(_ method: String, _ params: [String: String], limit: Int,
-                                           perPage: Int = 200, as: Page.Type) async throws -> Paged<Page.Item> {
+                                           perPage: Int = 200, as: Page.Type,
+                                           collect: ([Page.Item], Int) async throws -> [Page.Item] = { items, _ in items }
+    ) async throws -> Paged<Page.Item> {
         var items: [Page.Item] = []
         var cursor: String?
         var pages = 0
@@ -154,7 +156,10 @@ public struct SlackAPI: Sendable {
             do { page = try await call(method, params, as: Page.self) }
             catch RemoteError.timeout { return Paged(items: items, stopReason: .deadline, pages: pages) }
             pages += 1
-            items.append(contentsOf: page.items.prefix(limit - items.count))
+            let collected = try await collect(page.items, pages)
+            let remaining = limit - items.count
+            items.append(contentsOf: collected.prefix(remaining))
+            if collected.count > remaining { return Paged(items: items, stopReason: .limit, pages: pages) }
             guard let next = page.nextCursor, !next.isEmpty else {
                 return Paged(items: items, stopReason: .endOfList, pages: pages)
             }

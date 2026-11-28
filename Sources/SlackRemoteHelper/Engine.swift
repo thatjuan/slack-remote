@@ -9,6 +9,7 @@ final class Engine {
     private let pool: SessionPool?
     private let startup: Task<Void, Error>
     private var accountUI: AccountUI?
+    private var userDirectories: [TeamID: UserDirectory] = [:]
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
 
     init(pool: SessionPool?) {
@@ -61,6 +62,7 @@ final class Engine {
                                                    signOut: { try await transport.markSignedOut(team: workspace.id) })
                     })
                 },
+                users: { team in await self.users(team) },
                 ui: accountUI,
                 warn: { warning in warnings.withLock { $0.append(warning) } }
             )
@@ -68,6 +70,13 @@ final class Engine {
         } catch {
             return failure(call.command, error: remoteError(error), result: nil as Bool?)
         }
+    }
+
+    private func users(_ team: TeamID) -> UserDirectory {
+        if let directory = userDirectories[team] { return directory }
+        let directory = UserDirectory()
+        userDirectories[team] = directory
+        return directory
     }
 
     private func perform<Op: RemoteOperation>(_ op: Op, command: String, context: OperationContext,

@@ -47,3 +47,16 @@ On failure, `warnings`, `result` and `error.details` may be absent. For example,
 Slack commands run in SlackRemote.app and can run concurrently. When Slack rate-limits a request, the helper retries it if the wait fits within the command's deadline.
 
 Set `SLACK_REMOTE_CONFIG` to use a private config file at a different path. The file must be owned by the current user and exclude group and other permissions. Relative paths resolve from the CLI's working directory.
+
+## List results
+
+`read`, `channels`, `members`, and `people` follow Slack's cursors until they exhaust the list or reach `--limit` or the deadline. `search` follows numbered pages. `pages` counts the list responses processed, including pages whose rows were all filtered out. Lookups for names and conversation metadata are separate calls.
+
+| `stopReason` | `complete` | Meaning |
+| --- | --- | --- |
+| `end_of_list` | `true` | Slack reported the last page. |
+| `boundary` | `true` | `read --since` exhausted the requested range. |
+| `limit` | `false` | The command collected the requested number of rows before exhausting the list. |
+| `deadline` | `false` | The command ran out of time while paging. |
+
+A limit is a success. A paging deadline returns `partial_result` (19) with the available rows in the error envelope. Pass `--allow-partial` to receive the same result on stdout with exit status 0.
