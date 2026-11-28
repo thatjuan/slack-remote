@@ -9,6 +9,7 @@ struct SlackRemote: ParsableCommand {
         subcommands: [
             Doctor.self, Whoami.self, Accounts.self, Dest.self,
             Read.self, Search.self, Channels.self, Members.self, People.self,
+            Send.self, Reply.self, React.self, Upload.self,
         ]
     )
 }

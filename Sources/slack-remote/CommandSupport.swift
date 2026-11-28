@@ -83,6 +83,30 @@ struct WorkspaceOptions: ParsableArguments {
     }) var team: TeamID?
 }
 
+/// Common flags for Slack writes and their dry runs.
+struct WriteOptions: ParsableArguments {
+    @OptionGroup var command: CommandOptions
+    @OptionGroup var target: DestinationOptions
+    @Flag(help: "Verify the destination and show the planned write.") var dryRun = false
+
+    func validate() throws { try target.validate(requireDestination: true) }
+
+    /// Preserves a named destination so the helper resolves it against its loaded config.
+    func destination() throws -> WriteTarget {
+        if let name = target.dest { return .named(name) }
+        if let team = target.team, let channel = target.channel {
+            return .explicit(Destination(team: team, conversation: channel))
+        }
+        throw ValidationError("Supply --dest or both --team and --channel.")
+    }
+}
+
+/// Parses the timestamp syntax shared by write commands.
+func writeTimestamp(_ raw: String) throws -> String {
+    guard SlackTimestamp.isValid(raw) else { throw ValidationError("Expected a Slack message timestamp.") }
+    return raw
+}
+
 enum CommandSupport {
     static func validateLimit(_ limit: Int, maximum: Int) throws {
         guard (1...maximum).contains(limit) else {

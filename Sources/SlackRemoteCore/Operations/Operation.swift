@@ -17,6 +17,10 @@ public enum Operation: Codable, Equatable, Sendable {
     case channels(ChannelsRequest)
     case members(MembersRequest)
     case people(PeopleRequest)
+    case send(SendRequest)
+    case reply(ReplyRequest)
+    case react(ReactRequest)
+    case upload(UploadRequest)
 
     public var body: any RemoteOperation {
         switch self {
@@ -30,6 +34,10 @@ public enum Operation: Codable, Equatable, Sendable {
         case .channels(let request): return request
         case .members(let request): return request
         case .people(let request): return request
+        case .send(let request): return request
+        case .reply(let request): return request
+        case .react(let request): return request
+        case .upload(let request): return request
         }
     }
 }
@@ -62,6 +70,7 @@ public struct OperationContext: Sendable {
     public let deadline: Date
     public let config: Config?
     public let file: FileHandle?
+    public let upload: FileUpload?
     public let helperVersion: String
     public let accounts: @Sendable () async -> [AccountRecord]
     public let api: @Sendable (TeamID?) async throws -> SlackAPI
@@ -69,7 +78,7 @@ public struct OperationContext: Sendable {
     public let ui: AccountUI
     public let warn: @Sendable (String) -> Void
 
-    public init(deadline: Date, config: Config?, file: FileHandle? = nil, helperVersion: String,
+    public init(deadline: Date, config: Config?, file: FileHandle? = nil, upload: FileUpload? = nil, helperVersion: String,
                 accounts: @escaping @Sendable () async -> [AccountRecord],
                 api: @escaping @Sendable (TeamID?) async throws -> SlackAPI,
                 users: @escaping @Sendable (TeamID) async -> UserDirectory = { _ in UserDirectory() },
@@ -78,6 +87,7 @@ public struct OperationContext: Sendable {
         self.deadline = deadline
         self.config = config
         self.file = file
+        self.upload = upload
         self.helperVersion = helperVersion
         self.accounts = accounts
         self.api = api

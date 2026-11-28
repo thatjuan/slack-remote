@@ -1,16 +1,26 @@
-# Upload a file
+# upload
+
+Share a local file in a Slack conversation or thread.
 
 ```sh
-slack-remote upload --dest notes --file /path/to/report.txt --dry-run
-slack-remote upload --dest self --file /path/to/report.txt
-slack-remote upload --dest notes --file /path/to/report.txt --text 'Report for review'
-slack-remote upload --dest notes --thread 1700000000.000400 --file /path/to/report.txt
+slack-remote upload --dest notes --file ./report.pdf --text 'Latest report'
+slack-remote upload --dest notes --file ./report.pdf --thread 1700000400.000300 --timeout 60
 ```
 
-Supply a configured destination with `--dest` or use `--team` and `--channel` together. To share a thread upload with the conversation as well, add `--also-send-to-channel`. Captions follow the same text rules as [send](send.md).
+Supply `--dest NAME` or both `--team T` and `--channel C`. Use the parent message timestamp for `--thread`. The optional caption follows the [message text rules](send.md), with broadcast mentions blocked.
 
-The file must be readable, nonempty and regular after resolving symlinks. Its name must be visible and contain no path separators or control characters. The default limit is 50,000,000 bytes. Set `--max-size` up to 1,000,000,000 bytes. `--dry-run` reports the file name, size and plan without staging the file or changing Slack.
+The source must be a nonempty regular file. The default size limit is 50,000,000 bytes. Set `--max-size` to a value from 1 to 1,000,000,000 bytes to change the limit. Names that begin with a dot or contain slashes, a colon, a backslash or control characters are rejected. `--dry-run` checks the file and verifies the destination without uploading. Use `--timeout S` to change the 15-second default.
 
-The destination composer must be empty. The command uses a private staging copy in Downloads and cleans it up when the operation ends. When you run through SlackRemote.app, the CLI opens the source file and hands it to the helper. macOS may ask once for SlackRemote to access Downloads for staging. The command selects the file by its exact URL when the native panel exposes that URL. If the panel cannot expose a selectable path, the command cancels it and uses Slack's native Paste action with the staged file URL. It restores the clipboard if it still owns it.
+```json
+{
+  "team": "T02R8SSJGCU",
+  "conversation": "C0CMFR1S2AZ",
+  "thread": null,
+  "fileId": "F012AB3CDE4",
+  "fileName": "report.pdf",
+  "size": 24576,
+  "ts": "1700000400.000300"
+}
+```
 
-A successful response includes the attachment method (`file_panel` or `file_paste`) and the message timestamp. A primary upload in the configured self-DM uses `file_paste` when the verified passive attachment preview is visible. If the command returns `upload_unconfirmed`, check the conversation or thread before retrying. For pre-send failures, `pendingFileLeft` and `draftLeft` report what may still be in the composer.
+Slack may take time to report the share message's timestamp. If it is still unavailable after up to five seconds of polling, the upload succeeds with `ts: null` and the warning `share_pending`. If the upload returns `upload_unconfirmed`, check the destination before retrying.

@@ -1,16 +1,20 @@
 # send
 
+Post text to a Slack channel or direct message.
+
 ```sh
-slack-remote send (--dest NAME | --team TEAM --channel ID) --text TEXT
-                  [--allow-broadcast] [--dry-run]
+slack-remote send --dest notes --text 'The build is ready.'
+slack-remote send --team T02R8SSJGCU --channel C0CMFR1S2AZ --text 'The build is ready.' --dry-run
 ```
 
-The command accepts the `--user`, `--route`, and `--interrupt` options described under [`open`](open.md). It writes into an empty composer or reuses an identical draft, then rechecks the destination, composer, and send button before pressing once. Success returns `team`, `conversation`, `route`, `method`, `sent: true`, and the rendered matching message timestamp `ts`.
+Supply `--dest NAME` or both `--team T` and `--channel C`. `--dry-run` checks the destination and account and returns [the planned write](../scripting.md#command-effects). Use `--timeout S` to change the 15-second default.
 
-`--dry-run` reports `dryRun: true`, `team`, `conversation`, `atDestination`, `account`, `composer`, and `plan`. It checks account identity using the sidebar and checks for a conflicting draft when the destination is already on screen.
+Text can contain up to 4,000 characters. Blank text, control characters other than tabs and newlines, slash commands, reaction shortcuts such as `+:tada:` and invalid emoji names give `unsafe_text`. Broadcast mentions such as `@here` or `<!here>` require `--allow-broadcast`.
 
-`unsafe_text` covers blank text, more than 4,000 characters, control characters other than newline and tab, a leading `/` after whitespace, and standalone reaction shortcuts such as `+:tada:`. `--allow-broadcast` permits `@channel`, `@here`, and `@everyone`. A different draft or pending content returns `draft_conflict`. A configured write allowlist can return `write_not_allowed`, and a configured account must verify.
+Slack returns the timestamp of the posted message.
 
-`--text` accepts Unicode emoji and shortcodes such as `:tada:`. A shortcode name can use lowercase ASCII letters, digits, underscores, plus signs, apostrophes, and hyphens. An invalid shortcode returns `unsafe_text`. If Slack's composer read-back omits an emoji, the command stops with `write_unverified` and leaves the draft. In `read`, emoji images with a Slack shortcode appear in shortcode form.
+```json
+{ "team": "T02R8SSJGCU", "conversation": "C0CMFR1S2AZ", "sent": true, "ts": "1700000400.000300" }
+```
 
-When a failure reports `draftLeft: true` before the press, rerun with the same text to reuse a matching draft or clear it with `draft clear --expect-text`. If the error is `send_unconfirmed`, Slack may have sent the message. Use `read` or check Slack before retrying.
+If Slack does not respond to the post request, the command returns `send_unconfirmed`. Check the conversation before retrying.
