@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TeamID: Hashable, RawRepresentable, Codable {
+public struct TeamID: Hashable, RawRepresentable, Codable, Sendable {
     public let rawValue: String
 
     public init?(_ raw: String) {
@@ -32,7 +32,7 @@ public struct ConversationID: Hashable, RawRepresentable, Codable {
     }
 }
 
-public struct UserID: Hashable, RawRepresentable, Codable {
+public struct UserID: Hashable, RawRepresentable, Codable, Sendable {
     public let rawValue: String
 
     public init?(_ raw: String) {
