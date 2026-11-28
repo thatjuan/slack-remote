@@ -59,6 +59,7 @@ app="$staging/SlackRemote.app"
 /bin/cp scripts/app/Info.plist "$app/Contents/Info.plist"
 /usr/bin/plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 /usr/bin/install -m 755 "$build_dir/SlackRemoteHelper" "$app/Contents/MacOS/SlackRemote"
+# The installer and release package copy the bundled CLI. The helper no longer runs it.
 /usr/bin/install -m 755 "$build_dir/slack-remote" "$app/Contents/Helpers/slack-remote"
 
 timestamp=--timestamp
@@ -73,7 +74,4 @@ fi
 
 /bin/rm -rf "$output/SlackRemote.app"
 /bin/mv "$app" "$output/SlackRemote.app"
-if [ "$identity" = - ]; then
-    printf '%s\n' 'SlackRemote.app is signed ad hoc. macOS will ask for Accessibility again after every rebuild. Pass --sign "<certificate name>" to keep the grant; see README "Build from source".' >&2
-fi
 printf '%s\n' "$output/SlackRemote.app"

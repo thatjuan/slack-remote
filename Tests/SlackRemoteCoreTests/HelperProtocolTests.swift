@@ -4,10 +4,8 @@ import Testing
 
 struct HelperProtocolTests {
     @Test(arguments: [
-        HelperProtocol.Frame.request(.init(clientVersion: "1.1.0", arguments: ["upload", "--file", "/dev/fd/3"],
-                                           workingDirectory: "/Users/test", passesFile: true,
-                                           configPath: "/Users/test/my config.json")),
-        .signal(2), .stdout(Data([0, 255])), .stderr(Data()), .exit(130), .rejected("version_mismatch"),
+        HelperProtocol.Frame.request(.init(clientVersion: "1.2.0", arguments: ["webkit-poc", "accounts"])),
+        .stdout(Data([0, 255])), .stderr(Data()), .exit(130), .rejected("version_mismatch"),
     ])
     func roundTrips(_ frame: HelperProtocol.Frame) throws {
         var buffer = HelperProtocol.encode(frame)

@@ -31,10 +31,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         menu.removeAllItems()
-        let trusted = Environment.isAccessibilityTrusted()
-        let slackRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: SlackApp.bundleIdentifier).isEmpty
-        addStatus(trusted ? "Accessibility: Granted" : "Accessibility: Not granted")
-        addStatus(slackRunning ? "Slack: Running" : "Slack: Not running")
         if let command = server.lastCommand {
             let time = DateFormatter.localizedString(from: command.time, dateStyle: .none, timeStyle: .short)
             addStatus("Last command: \(command.name) · exit \(command.status) · \(time)")
@@ -45,9 +41,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         addAction("Add Slack Account (PoC)…", action: #selector(addAccount))
         for title in webKit.teamTitles { addStatus(title) }
         menu.addItem(.separator())
-        if !trusted {
-            addAction("Grant Access…", action: #selector(grantAccess))
-        }
         let loginItem = addAction("Open at Login", action: #selector(toggleOpenAtLogin))
         loginItem.state = isOpenAtLogin ? .on : .off
         let quit = menu.addItem(withTitle: "Quit SlackRemote", action: #selector(NSApplication.terminate(_:)),
@@ -69,12 +62,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
         item.target = self
         return item
-    }
-
-    @objc private func grantAccess() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = Environment.requestAccessibilityTrust(until: Date().addingTimeInterval(120))
-        }
     }
 
     private var isOpenAtLogin: Bool { login.status == .enabled || login.status == .requiresApproval }

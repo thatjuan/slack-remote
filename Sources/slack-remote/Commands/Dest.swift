@@ -1,4 +1,5 @@
 import ArgumentParser
+import Foundation
 import SlackRemoteCore
 
 struct Dest: ParsableCommand {
@@ -28,10 +29,10 @@ struct Dest: ParsableCommand {
         }
 
         func run() throws {
-            try CommandSupport.runLocal("dest add", options: options) {
-                var config = try Config.load() ?? Config()
-                config.destinations[name] = Destination(team: team, conversation: channel)
-                try config.save()
+            try CommandSupport.run("dest add") {
+                let destination = Destination(team: team, conversation: channel)
+                let deadline = Date().addingTimeInterval(options.timeout)
+                let config = try Config.setDestination(destination, named: name, deadline: deadline)
                 return Result(destinations: config.destinations)
             }
         }
@@ -43,7 +44,7 @@ struct Dest: ParsableCommand {
         @OptionGroup var options: CommandOptions
 
         func run() throws {
-            try CommandSupport.runLocal("dest list", options: options) {
+            try CommandSupport.run("dest list") {
                 Result(destinations: try Config.load()?.destinations ?? [:])
             }
         }
