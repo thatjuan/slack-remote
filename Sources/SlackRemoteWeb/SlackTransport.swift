@@ -19,14 +19,7 @@ func nativePost(_ team: LocalConfig.Team, in store: WKWebsiteDataStore, method: 
         throw TransportFailure.notSent
     }
 
-    let cookies = await store.httpCookieStore.allCookies().filter { cookie in
-        let domain = cookie.domain.lowercased()
-        let suffix = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
-        let domainMatches = suffix == host || (domain.hasPrefix(".") && host.hasSuffix("." + suffix))
-        let path = cookie.path
-        let pathMatches = url.path == path || url.path.hasPrefix(path.hasSuffix("/") ? path : path + "/")
-        return domainMatches && pathMatches
-    }
+    let cookies = await slackCookies(in: store, for: url, host: host)
     var form = params
     form["token"] = token
     let request = makeNativePostRequest(url: url, form: form, cookies: cookies)
@@ -48,6 +41,19 @@ func nativePost(_ team: LocalConfig.Team, in store: WKWebsiteDataStore, method: 
     guard let http = response as? HTTPURLResponse else { throw TransportFailure.noResponse }
     return TransportResponse(status: http.statusCode,
                              retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init), body: data)
+}
+
+/// Selects profile cookies for the exact HTTPS request destination.
+@MainActor
+func slackCookies(in store: WKWebsiteDataStore, for url: URL, host: String) async -> [HTTPCookie] {
+    await store.httpCookieStore.allCookies().filter { cookie in
+        let domain = cookie.domain.lowercased()
+        let suffix = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
+        let domainMatches = suffix == host || (domain.hasPrefix(".") && host.hasSuffix("." + suffix))
+        let path = cookie.path
+        let pathMatches = url.path == path || url.path.hasPrefix(path.hasSuffix("/") ? path : path + "/")
+        return domainMatches && pathMatches
+    }
 }
 
 func makeNativePostRequest(url: URL, form: [String: String], cookies: [HTTPCookie]) -> URLRequest {
@@ -76,7 +82,7 @@ private func formEncode(_ value: String) -> String {
         .replacingOccurrences(of: "%20", with: "+")
 }
 
-private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
+final class RejectRedirects: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest) async -> URLRequest? {
         nil

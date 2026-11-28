@@ -26,7 +26,8 @@ public enum MessageText {
                 }
             }
         }
-        if !allowBroadcast, ["@channel", "@here", "@everyone"].contains(where: {
+        let broadcasts = ["@channel", "@here", "@everyone", "<!channel>", "<!here>", "<!everyone>"]
+        if !allowBroadcast, broadcasts.contains(where: {
             text.range(of: $0, options: .caseInsensitive) != nil
         }) {
             throw RemoteError.unsafeText(reason: "broadcast_mention")

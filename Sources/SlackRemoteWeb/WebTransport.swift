@@ -29,6 +29,21 @@ public struct WebTransport: SlackTransport {
         return try await nativePost(config, in: store, method: method, params: params)
     }
 
+    /// Supplies the team's scoped cookies if Slack requires them for the external upload.
+    public func uploadCookies(for team: TeamID, to url: URL) async throws -> [HTTPCookie] {
+        do {
+            let (_, session) = try resolve(team)
+            guard let store = session.dataStore else { throw RemoteError.sessionUnavailable }
+            guard let url = slackHTTPSURL(url.absoluteString), let host = url.host?.lowercased() else { return [] }
+            let cookies = await slackCookies(in: store, for: url, host: host)
+            let (_, current) = try resolve(team)
+            guard current === session else { throw RemoteError.sessionUnavailable }
+            return cookies
+        } catch TransportFailure.notSent {
+            throw RemoteError.sessionUnavailable
+        }
+    }
+
     /// Reload the client's document so Slack can recover the team's session.
     public func refresh(for team: TeamID) async -> Bool {
         guard let (_, session) = try? resolve(team) else { return false }

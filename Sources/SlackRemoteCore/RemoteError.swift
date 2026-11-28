@@ -2,8 +2,8 @@ public enum RemoteError: Error, Equatable {
     case internalError(operation: String)
     case helperVersionMismatch
     case destinationUnreachable
+    case destinationUnavailable(reason: ConversationRejection)
     case unsafeText(reason: String)
-    case draftConflict(existingLength: Int)
     case sendUnconfirmed
     case timeout
     case notImplemented
@@ -33,9 +33,8 @@ public enum RemoteError: Error, Equatable {
         switch self {
         case .internalError: return "internal"
         case .helperVersionMismatch: return "helper_version_mismatch"
-        case .destinationUnreachable: return "destination_unreachable"
+        case .destinationUnreachable, .destinationUnavailable: return "destination_unreachable"
         case .unsafeText: return "unsafe_text"
-        case .draftConflict: return "draft_conflict"
         case .sendUnconfirmed: return "send_unconfirmed"
         case .timeout: return "timeout"
         case .notImplemented: return "not_implemented"
@@ -67,9 +66,9 @@ public enum RemoteError: Error, Equatable {
         case .internalError, .notImplemented: return 1
         case .helperVersionMismatch, .helperUnavailable: return 10
         case .sessionUnavailable, .networkUnavailable: return 11
-        case .destinationUnreachable, .unsupportedDestination, .messageNotFound: return 13
+        case .destinationUnreachable, .destinationUnavailable, .unsupportedDestination, .messageNotFound: return 13
         case .rateLimited: return 14
-        case .unsafeText, .draftConflict, .writeNotAllowed, .fileRejected: return 15
+        case .unsafeText, .writeNotAllowed, .fileRejected: return 15
         case .sendUnconfirmed, .reactionUnconfirmed, .uploadUnconfirmed: return 17
         case .timeout: return 18
         case .partialResult: return 19
@@ -85,10 +84,9 @@ public enum RemoteError: Error, Equatable {
         case .internalError: return "An internal operation failed."
         case .helperVersionMismatch:
             return "SlackRemote.app is a different version from this slack-remote. Quit SlackRemote from the menu bar and run the command again."
-        case .destinationUnreachable:
+        case .destinationUnreachable, .destinationUnavailable:
             return "Slack could not reach the requested conversation."
         case .unsafeText: return "Slack remote refused the supplied text."
-        case .draftConflict: return "The composer already contains different content."
         case .sendUnconfirmed: return "The message may have been sent. Check the conversation before retrying."
         case .timeout: return "The command deadline passed."
         case .notImplemented: return "This command is not implemented yet."
@@ -118,6 +116,12 @@ public enum RemoteError: Error, Equatable {
         }
     }
 
+    /// Reasons for rejecting a conversation during write preflight.
+    public enum ConversationRejection: String, Sendable {
+        case notAMember = "not_a_member"
+        case archived
+    }
+
     public enum Detail: Encodable {
         case string(String)
         case integer(Int)
@@ -139,7 +143,7 @@ public enum RemoteError: Error, Equatable {
         switch self {
         case .internalError(let operation): return ["operation": .string(operation)]
         case .unsafeText(let reason), .fileRejected(let reason): return ["reason": .string(reason)]
-        case .draftConflict(let existingLength): return ["existingLength": .integer(existingLength)]
+        case .destinationUnavailable(let reason): return ["reason": .string(reason.rawValue)]
         case .noAccount(let team?): return ["team": .string(team.rawValue)]
         case .teamRequired(let teams): return ["teams": .string(teams.map(\.rawValue).joined(separator: ","))]
         case .rateLimited(let retryAfter): return ["retryAfter": .number(retryAfter)]

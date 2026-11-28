@@ -11,6 +11,11 @@ struct MessageTextTests {
         ("example :Tada:", "invalid_emoji_name"),
         ("example :bad/name:", "invalid_emoji_name"),
         ("Good morning @ChAnNeL", "broadcast_mention"),
+        ("Hello @here", "broadcast_mention"),
+        ("Hello @everyone", "broadcast_mention"),
+        ("Hello <!here>", "broadcast_mention"),
+        ("Hello <!channel>", "broadcast_mention"),
+        ("Hello <!everyone>", "broadcast_mention"),
     ])
     func refusesUnsafeText(_ text: String, reason: String) {
         let error = #expect(throws: RemoteError.self) { try MessageText.validate(text, allowBroadcast: false) }
@@ -21,8 +26,9 @@ struct MessageTextTests {
         #expect(actual == reason)
     }
 
-    @Test func allowBroadcastPermitsHere() throws {
-        try MessageText.validate("Hello @here", allowBroadcast: true)
+    @Test(arguments: ["Hello @here", "Hello <!channel>"])
+    func allowBroadcastPermitsMentions(_ text: String) throws {
+        try MessageText.validate(text, allowBroadcast: true)
     }
 
     @Test func acceptsShortcodesUnicodeEmojiAndURLsWithPorts() throws {

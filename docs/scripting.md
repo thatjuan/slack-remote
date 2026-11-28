@@ -25,6 +25,16 @@ Check the exit status before parsing stdout. On success the CLI writes one JSON 
 
 On failure, `warnings`, `result` and `error.details` may be absent. For example, `doctor` can include its checks on failure. Branch on `error.code`. Use `message` and `details` for diagnostics.
 
+## Command effects
+
+[`send`](commands/send.md) and [`reply`](commands/reply.md) post messages. [`react`](commands/react.md) adds an emoji reaction. [`upload`](commands/upload.md) shares a local file. All four check the account, write allowlist and conversation before changing Slack. A reply or threaded upload also checks the parent message.
+
+Pass `--dry-run` to run those checks and return a plan without changing Slack. The result contains `dryRun: true`, `team`, `conversation`, `conversationName` (or `null` when Slack has no name), `account` with `user` and `userName`, and a `plan` array.
+
+Exit status 17 means Slack may have applied a write. Use the conversation or thread to confirm the result before retrying. A successful upload with `share_pending` means Slack confirmed the file, and its share timestamp is still pending.
+
+`dest add` saves a destination to local configuration. `accounts add` opens sign-in, and `accounts remove` removes the local account and its stored session. `whoami` looks up the self-DM with Slack's `conversations.open`.
+
 ## Exit statuses
 
 | Status | Error codes and conditions |
@@ -35,7 +45,7 @@ On failure, `warnings`, `result` and `error.details` may be absent. For example,
 | 11 | `session_unavailable`, `network_unavailable` |
 | 13 | `destination_unreachable`, `unsupported_destination`, `message_not_found` |
 | 14 | `rate_limited` |
-| 15 | `unsafe_text`, `draft_conflict`, `write_not_allowed`, `file_rejected` |
+| 15 | `unsafe_text`, `write_not_allowed`, `file_rejected` |
 | 17 | `send_unconfirmed`, `reaction_unconfirmed`, `upload_unconfirmed` |
 | 18 | `timeout` |
 | 19 | `partial_result` |

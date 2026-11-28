@@ -50,6 +50,14 @@ final class Engine {
                 deadline: deadline,
                 config: config,
                 file: file,
+                upload: { team, user, url, file, size, deadline in
+                    try await FileUploader.post(to: url, file: file, size: size, deadline: deadline) { url in
+                        let selection = try await AccountSelection.resolve(team, in: pool.records)
+                        guard selection.team.user == user else { throw RemoteError.accountMismatch }
+                        let transport = await WebTransport(pool: pool, accountID: selection.account.id)
+                        return try await transport.uploadCookies(for: team, to: url)
+                    }
+                },
                 helperVersion: version,
                 accounts: { await pool.records },
                 api: { team in
