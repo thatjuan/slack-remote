@@ -18,10 +18,11 @@ MainActor.assumeIsolated {
     } else {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        let webKit = WebKitPoC()
+        installMainMenu()
+        let pool = (try? AccountStore.load()).map { SessionPool(file: $0) }
+        let webKit = WebKitPoC(pool: pool)
         if let server = try? HelperServer(inProcess: { await webKit.handle($0) }) {
-            webKit.start()
-            let statusMenu = StatusMenu(server: server, webKit: webKit)
+            let statusMenu = StatusMenu(server: server, pool: pool)
             withExtendedLifetime(statusMenu) { app.run() }
         }
     }

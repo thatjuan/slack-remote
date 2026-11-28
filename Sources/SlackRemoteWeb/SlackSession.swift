@@ -1,4 +1,5 @@
 import Foundation
+import SlackRemoteCore
 import WebKit
 
 struct LocalConfig: Decodable, Sendable {
@@ -6,7 +7,7 @@ struct LocalConfig: Decodable, Sendable {
         let id: String
         let name: String
         let url: String
-        let token: String
+        let token: String?
         let userID: String
 
         enum CodingKeys: String, CodingKey {
@@ -18,11 +19,11 @@ struct LocalConfig: Decodable, Sendable {
     let teams: [String: Team]
 
     @MainActor
-    static func read(from webView: WKWebView) async throws -> Self {
-        guard let json = try await webView.callAsyncJavaScript(
+    static func read(from webView: WKWebView?) async throws -> Self {
+        guard let json = try await webView?.callAsyncJavaScript(
             "return localStorage.getItem('localConfig_v2')",
             arguments: [:], in: nil, contentWorld: .defaultClient
-        ) as? String else { throw WebKitPoCError.missingConfig }
+        ) as? String else { throw SlackSessionError.missingConfig }
         return try JSONDecoder().decode(Self.self, from: Data(json.utf8))
     }
 }
@@ -30,83 +31,116 @@ struct LocalConfig: Decodable, Sendable {
 /// One signed-in Slack browser profile. Its web view stays out of any window.
 @MainActor
 final class SlackSession: NSObject, WKNavigationDelegate {
-    let storeID: UUID
-    let webView: WKWebView
+    private var webView: WKWebView?
+    var dataStore: WKWebsiteDataStore? { webView?.configuration.websiteDataStore }
 
     private var pending: (navigation: WKNavigation, completion: CheckedContinuation<Void, Error>)?
     private var loading: Task<Void, Error>?
+    private var refreshing: (team: TeamID, task: Task<Bool, Never>)?
     private var ready = false
-    private(set) var prefersIdle = true
 
-    init(storeID: UUID) {
-        self.storeID = storeID
+    convenience init(storeID: UUID) {
+        self.init(dataStore: WKWebsiteDataStore(forIdentifier: storeID))
+    }
+
+    init(dataStore: WKWebsiteDataStore) {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: storeID)
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        configuration.websiteDataStore = dataStore
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.customUserAgent = SafariUserAgent.current
-        #if DEBUG
-        webView.isInspectable = true
-        #endif
+        self.webView = webView
         super.init()
         webView.navigationDelegate = self
     }
 
-    func loadIdle() async throws {
-        try await load {
-            webView.loadHTMLString("<!doctype html><title>slack-remote</title>",
+    private func loadIdle() async throws {
+        try await load { browser in
+            browser.loadHTMLString("<!doctype html><title>slack-remote</title>",
                                    baseURL: URL(string: "https://app.slack.com/")!)
         }
     }
 
-    func loadClient() async throws {
-        try await load {
-            webView.load(URLRequest(url: URL(string: "https://app.slack.com/client")!))
+    private func loadClient(for team: TeamID, deadline: ContinuousClock.Instant) async throws {
+        try await load(until: deadline) { browser in
+            browser.load(URLRequest(url: URL(string: "https://app.slack.com/client/\(team.rawValue)")!))
         }
     }
 
     func localConfig() async throws -> LocalConfig {
-        try await LocalConfig.read(from: webView)
+        guard let webView else { throw SlackSessionError.navigationFailed }
+        return try await LocalConfig.read(from: webView)
     }
 
     /// Share the initial navigation among concurrent commands for this profile.
     func prepare() async throws {
+        while let refreshing { _ = await refreshing.task.value }
         if let loading { return try await loading.value }
         guard !ready else { return }
         let task = Task {
             defer { loading = nil }
-            if prefersIdle {
-                do {
-                    try await loadIdle()
-                    guard try await !localConfig().teams.isEmpty else { throw WebKitPoCError.missingConfig }
-                } catch {
-                    prefersIdle = false
-                    NSLog("SlackRemote PoC local configuration was unavailable in the idle document. Loading the full Slack client.")
-                    try await loadClient()
-                }
-            } else {
-                try await loadClient()
-            }
+            try await loadIdle()
             ready = true
         }
         loading = task
         try await task.value
     }
 
-    func useFullClient() async throws {
-        if prefersIdle {
-            prefersIdle = false
-            ready = false
-            NSLog("SlackRemote PoC page transport was blocked in the idle document. Loading the full Slack client.")
+    /// Give Slack's full client up to twenty seconds to recover the team's token.
+    func refresh(for team: TeamID) async -> Bool {
+        while let refreshing {
+            let recovered = await refreshing.task.value
+            if refreshing.team == team { return recovered }
         }
-        try await prepare()
+        guard webView != nil else { return false }
+        let task = Task {
+            defer { refreshing = nil }
+            if let loading { _ = try? await loading.value }
+            ready = false
+            let clock = ContinuousClock()
+            let deadline = clock.now + .seconds(20)
+            var recovered = false
+            do {
+                try await loadClient(for: team, deadline: deadline)
+                while !Task.isCancelled, clock.now < deadline {
+                    if let token = try? await localConfig().teams[team.rawValue]?.token, !token.isEmpty {
+                        recovered = true
+                        break
+                    }
+                    try await Task.sleep(until: min(deadline, clock.now + .milliseconds(500)), clock: clock)
+                }
+            } catch {}
+            do {
+                try await loadIdle()
+                ready = true
+                return recovered
+            } catch {
+                return false
+            }
+        }
+        refreshing = (team, task)
+        return await task.value
     }
 
-    private func load(_ start: () -> WKNavigation?) async throws {
-        guard pending == nil, let navigation = start() else { throw WebKitPoCError.navigationFailed }
+    /// Release the browser before its persistent data store is removed.
+    func close() {
+        loading?.cancel()
+        refreshing?.task.cancel()
+        if let pending { finish(pending.navigation, result: .failure(SlackSessionError.navigationFailed)) }
+        webView?.stopLoading()
+        webView = nil
+        ready = false
+    }
+
+    private func load(until deadline: ContinuousClock.Instant = .now + .seconds(25),
+                      _ start: (WKWebView) -> WKNavigation?) async throws {
+        try Task.checkCancellation()
+        guard pending == nil, let navigation = webView.flatMap(start) else {
+            throw SlackSessionError.navigationFailed
+        }
         let timeout = Task { [weak self] in
-            try await Task.sleep(for: .seconds(25))
-            self?.finish(navigation, result: .failure(WebKitPoCError.navigationFailed))
-            self?.webView.stopLoading()
+            try await Task.sleep(until: deadline, clock: .continuous)
+            self?.finish(navigation, result: .failure(SlackSessionError.navigationFailed))
+            self?.webView?.stopLoading()
         }
         defer { timeout.cancel() }
         try await withCheckedThrowingContinuation { pending = (navigation, $0) }
@@ -117,16 +151,16 @@ final class SlackSession: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        finish(navigation, result: .failure(WebKitPoCError.navigationFailed))
+        finish(navigation, result: .failure(SlackSessionError.navigationFailed))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        finish(navigation, result: .failure(WebKitPoCError.navigationFailed))
+        finish(navigation, result: .failure(SlackSessionError.navigationFailed))
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         ready = false
-        if let pending { finish(pending.navigation, result: .failure(WebKitPoCError.navigationFailed)) }
+        if let pending { finish(pending.navigation, result: .failure(SlackSessionError.navigationFailed)) }
     }
 
     private func finish(_ navigation: WKNavigation?, result: Result<Void, Error>) {

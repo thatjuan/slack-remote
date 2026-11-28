@@ -1,69 +1,30 @@
 import Foundation
 import WebKit
 
+enum SlackSessionError: Error {
+    case missingConfig
+    case navigationFailed
+    case invalidWorkspaceURL
+    case invalidResponse
+}
+
 struct TransportResponse: Sendable {
     let status: Int
     let retryAfter: Double?
     let body: Data
 }
 
+/// Send a Slack API request using the token currently loaded in this WebKit profile.
 @MainActor
-func pagePost(_ session: SlackSession, team: String, method: String, params: [String: String]) async throws
-    -> TransportResponse {
-    let result = try await session.webView.callAsyncJavaScript("""
-        const cfg = JSON.parse(localStorage.getItem('localConfig_v2'));
-        const team = cfg?.teams?.[teamId];
-        if (!team) return { missingTeam: true };
-        const workspace = new URL(team.url);
-        if (workspace.protocol !== 'https:' || workspace.username || workspace.password ||
-            !(workspace.hostname === 'slack.com' || workspace.hostname.endsWith('.slack.com')))
-            return { invalidURL: true };
-        const body = new URLSearchParams({ ...params, token: team.token });
-        for (const base of [workspace, 'https://app.slack.com/', 'https://slack.com/']) {
-            const endpoint = new URL('api/' + method, base);
-            let response;
-            try {
-                response = await fetch(endpoint, {
-                    method: 'POST', body, credentials: 'include', redirect: 'error',
-                    signal: AbortSignal.timeout(15000)
-                });
-            } catch (error) {
-                if (error.name !== 'TypeError') return { networkError: true };
-                continue;
-            }
-            return {
-                status: response.status, retryAfter: response.headers.get('Retry-After'),
-                body: await response.text(), fallbackHost: base === workspace ? '' : endpoint.hostname
-            };
-        }
-        return { blocked: true };
-        """, arguments: ["teamId": team, "method": method, "params": params], in: nil, contentWorld: .defaultClient)
-    guard let result = result as? [String: Any] else { throw WebKitPoCError.invalidResponse }
-    if result["missingTeam"] as? Bool == true { throw WebKitPoCError.missingConfig }
-    if result["invalidURL"] as? Bool == true { throw WebKitPoCError.invalidWorkspaceURL }
-    if result["networkError"] as? Bool == true { throw WebKitPoCError.networkFailed }
-    if result["blocked"] as? Bool == true { throw WebKitPoCError.pageBlocked }
-    guard let status = result["status"] as? Int, let body = result["body"] as? String else {
-        throw WebKitPoCError.invalidResponse
-    }
-    if let fallback = result["fallbackHost"] as? String, !fallback.isEmpty {
-        NSLog("SlackRemote PoC page transport used %@.", fallback)
-    }
-    return TransportResponse(status: status, retryAfter: (result["retryAfter"] as? String).flatMap(Double.init),
-                             body: Data(body.utf8))
-}
-
-@MainActor
-func nativePost(_ session: SlackSession, team: String, method: String, params: [String: String]) async throws
-    -> TransportResponse {
-    guard let team = try await session.localConfig().teams[team] else { throw WebKitPoCError.missingConfig }
-    guard let base = URL(string: team.url), base.scheme == "https", base.user == nil, base.password == nil,
-          let host = base.host?.lowercased(), host == "slack.com" || host.hasSuffix(".slack.com"),
+func nativePost(_ team: LocalConfig.Team, in store: WKWebsiteDataStore, method: String, params: [String: String])
+    async throws -> TransportResponse {
+    guard let token = team.token, !token.isEmpty else { throw SlackSessionError.missingConfig }
+    guard let base = slackHTTPSURL(team.url), let host = base.host?.lowercased(),
           let url = URL(string: "api/" + method, relativeTo: base)?.absoluteURL else {
-        throw WebKitPoCError.invalidWorkspaceURL
+        throw SlackSessionError.invalidWorkspaceURL
     }
 
-    let cookies = await session.webView.configuration.websiteDataStore.httpCookieStore.allCookies().filter { cookie in
+    let cookies = await store.httpCookieStore.allCookies().filter { cookie in
         let domain = cookie.domain.lowercased()
         let suffix = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
         let domainMatches = suffix == host || (domain.hasPrefix(".") && host.hasSuffix("." + suffix))
@@ -72,7 +33,23 @@ func nativePost(_ session: SlackSession, team: String, method: String, params: [
         return domainMatches && pathMatches
     }
     var form = params
-    form["token"] = team.token
+    form["token"] = token
+    let request = makeNativePostRequest(url: url, form: form, cookies: cookies)
+
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.httpCookieStorage = nil
+    configuration.urlCache = nil
+    configuration.timeoutIntervalForRequest = 15
+    configuration.timeoutIntervalForResource = 30
+    let network = URLSession(configuration: configuration, delegate: RejectRedirects(), delegateQueue: nil)
+    defer { network.finishTasksAndInvalidate() }
+    let (data, response) = try await network.data(for: request)
+    guard let http = response as? HTTPURLResponse else { throw SlackSessionError.invalidResponse }
+    return TransportResponse(status: http.statusCode,
+                             retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init), body: data)
+}
+
+func makeNativePostRequest(url: URL, form: [String: String], cookies: [HTTPCookie]) -> URLRequest {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.httpBody = Data(form.sorted(by: { $0.key < $1.key }).map {
@@ -81,17 +58,15 @@ func nativePost(_ session: SlackSession, team: String, method: String, params: [
     request.allHTTPHeaderFields = HTTPCookie.requestHeaderFields(with: cookies)
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     request.setValue(SafariUserAgent.current, forHTTPHeaderField: "User-Agent")
+    request.setValue(SafariUserAgent.acceptLanguage(Locale.preferredLanguages), forHTTPHeaderField: "Accept-Language")
+    return request
+}
 
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.httpCookieStorage = nil
-    configuration.timeoutIntervalForRequest = 15
-    configuration.timeoutIntervalForResource = 30
-    let network = URLSession(configuration: configuration, delegate: RejectRedirects(), delegateQueue: nil)
-    defer { network.finishTasksAndInvalidate() }
-    let (data, response) = try await network.data(for: request)
-    guard let http = response as? HTTPURLResponse else { throw WebKitPoCError.invalidResponse }
-    return TransportResponse(status: http.statusCode,
-                             retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init), body: data)
+/// Accept only HTTPS destinations on Slack's own domains.
+func slackHTTPSURL(_ string: String) -> URL? {
+    guard let url = URL(string: string), url.scheme == "https", url.user == nil, url.password == nil,
+          let host = url.host?.lowercased(), host == "slack.com" || host.hasSuffix(".slack.com") else { return nil }
+    return url
 }
 
 private func formEncode(_ value: String) -> String {
